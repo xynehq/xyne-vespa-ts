@@ -1,12 +1,48 @@
 {
   "name": "vespa-ts",
-  "module": "index.ts",
+  "version": "1.0.0",
+  "description": "A reusable TypeScript package for interacting with Vespa search engine with dependency injection support",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist/index.esm.js",
   "type": "module",
-  "private": true,
+  "private": false,
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsc && rollup -c",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "vespa",
+    "search",
+    "typescript",
+    "dependency-injection",
+    "search-engine"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/vespa-ts.git"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/jest": "^29.5.0",
+    "jest": "^29.5.0",
+    "rollup": "^4.0.0",
+    "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "p-limit": "^6.2.0",
+    "zod": "^4.0.15"
   }
 }
