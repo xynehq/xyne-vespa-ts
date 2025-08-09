@@ -1,5 +1,5 @@
 import { int } from "zod"
-import type { ILogger } from "../interfaces"
+import type { ILogger } from "../types"
 import type { Intent } from "../types"
 
 export function scale(val: number): number | null {

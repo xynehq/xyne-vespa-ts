@@ -1,11 +1,11 @@
 // Main exports for the Vespa package
 export { VespaService } from "./src/vespa";
-export { createVespaService, NoOpLogger, ConsoleLogger, createDefaultConfig } from "./src/factory";
+export { createVespaService, ConsoleLogger, createDefaultConfig } from "./src";
 export type { 
   ILogger, 
   VespaConfig, 
   VespaDependencies, 
-} from "./src/interfaces";
+} from "./src/types";
 
 export * from "./src/client";
 export * from "./src/errors";

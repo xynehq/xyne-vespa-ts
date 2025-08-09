@@ -57,7 +57,7 @@ import VespaClient from "./client/vespaClient";
 import pLimit from "p-limit";
 import { VespaSearchResponseToSearchResult } from "./mappers";
 import { ProductionVespaClient } from "./client/productionVespaClient";
-import type { ILogger, VespaConfig, VespaDependencies } from "./interfaces";
+import type { ILogger, VespaConfig, VespaDependencies } from "./types";
 import { is } from "zod/locales";
 
 type YqlProfile = {
@@ -101,8 +101,8 @@ export class VespaService {
     // Initialize Vespa clients
     this.vespa = this.config.productionServerUrl && this.config.apiKey
       ? new ProductionVespaClient(this.config.productionServerUrl, this.config.apiKey) as unknown as VespaClient
-      : new VespaClient();
-    this.fallbackVespa = new VespaClient();
+      : new VespaClient(this.vespaEndpoint, this.logger,this.config);
+    this.fallbackVespa = new VespaClient(this.vespaEndpoint, this.logger,this.config);
   }
 
  getSchemaSources(): string {

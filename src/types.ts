@@ -1,4 +1,5 @@
 import { z } from "zod"
+import config from "./config"
 export const fileSchema = "file" // Replace with your actual schema name
 export const userSchema = "user"
 
@@ -747,7 +748,7 @@ const VespaGroupSchema: z.ZodSchema<VespaGroupType> = z.object({
   children: z.array(z.lazy(() => VespaGroupSchema)).optional(),
 })
 
-type VespaGroupType = {
+export type VespaGroupType = {
   id: string
   relevance: number
   label: string
@@ -1645,4 +1646,32 @@ export interface GetThreadItemsParams {
   asc?: boolean
   channelName?: string
   filterQuery?: string
+}
+
+
+/**
+ * Logger interface for dependency injection
+ * Compatible with the original logger interface from xyne
+ */
+export interface ILogger {
+  debug(message: string, ...args: any[]): void;
+  info(message: string, ...args: any[]): void;
+  warn(message: string, ...args: any[]): void;
+  error(message: string | Error, ...args: any[]): void;
+  child(metadata: Record<string, any>): ILogger;
+}
+
+ /**
+ * Vespa configuration interface
+ */
+export type VespaConfig = typeof config;
+
+/**
+ * Main dependencies interface for dependency injection
+ */
+export interface VespaDependencies {
+  logger: ILogger;
+  config: VespaConfig;
+  sourceSchemas: string[];
+  vespaEndpoint: string;
 }

@@ -20,7 +20,7 @@ import {
 } from "../types"
 import { getErrorMessage } from "../utils"
 import { handleVespaGroupResponse } from "../mappers"
-import type { ILogger } from "../interfaces"
+import type { ILogger } from "../types"
 
 // Define EntityCounts type
 export interface EntityCounts {
