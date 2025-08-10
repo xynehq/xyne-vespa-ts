@@ -59,8 +59,8 @@ import {
 } from "../types"
 
 import type { z } from "zod"
-import { chunkDocument } from "../chunks"
 import { scale } from "../utils"
+import type { ITextChunker } from "../types"
 
 function countHiTags(str: string): number {
   // Regular expression to match both <hi> and </hi> tags
@@ -163,6 +163,7 @@ const maxSearchChunks = 1
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
   email?: string,
+  textChunker?: ITextChunker,
 ): SearchResponse => {
   const { root, trace } = resp
   const children = root.children || []
@@ -241,10 +242,10 @@ export const VespaSearchResponseToSearchResult = (
             // matchfeatures is already part of fields (if returned by Vespa)
             // creating a new property
             // Ensure chunks_summary processing happens before parsing
-            fields.chunks_summary = fields.description
-              ? chunkDocument(fields.description)
+            fields.chunks_summary = fields.description && textChunker
+              ? textChunker.chunkDocument(fields.description)
                   .map((v) => v.chunk)
-                  .sort((a, b) => countHiTags(b) - countHiTags(a))
+                  .sort((a: string, b: string) => countHiTags(b) - countHiTags(a))
                   .slice(0, maxSearchChunks)
               : []
             // This line seems redundant as it's assigned above? Keeping it for now.

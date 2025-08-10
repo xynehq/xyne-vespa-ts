@@ -19,7 +19,6 @@ import {
   type Intent,
   type Span,
   SlackEntity,
-  AuthType,
   chatContainerSchema,
 } from "./types";
 import type {
@@ -55,7 +54,6 @@ import {
 import crypto from "crypto";
 import VespaClient from "./client/vespaClient";
 import pLimit from "p-limit";
-import { VespaSearchResponseToSearchResult } from "./mappers";
 import { ProductionVespaClient } from "./client/productionVespaClient";
 import type { ILogger, VespaConfig, VespaDependencies } from "./types";
 import { is } from "zod/locales";

@@ -1,11 +1,11 @@
-# vespa-ts
+# @xyne/vespa-ts
 
 A reusable TypeScript package for interacting with Vespa search engine with dependency injection support.
 
 ## Installation
 
 ```bash
-npm install vespa-ts
+npm install @xyne/vespa-ts
 ```
 
 ## Modular Imports
@@ -16,8 +16,8 @@ This package supports modular imports, allowing you to import only the parts you
 
 ```typescript
 // Import core functionality
-import { createVespaService, ConsoleLogger, VespaService } from 'vespa-ts';
-import type { VespaDependencies, ILogger, VespaConfig } from 'vespa-ts';
+import { createVespaService, ConsoleLogger, VespaService } from '@xyne/vespa-ts';
+import type { VespaDependencies, ILogger, VespaConfig } from '@xyne/vespa-ts';
 ```
 
 ### Types
@@ -32,7 +32,7 @@ import type {
   AutocompleteResults,
   Apps,
   Entity
-} from 'vespa-ts/types';
+} from '@xyne/vespa-ts/types';
 ```
 
 ### Mappers
@@ -44,7 +44,7 @@ import {
   VespaAutocompleteResponseToResult,
   getSortedScoredChunks,
   handleVespaGroupResponse
-} from 'vespa-ts/mappers';
+} from '@xyne/vespa-ts/mappers';
 ```
 
 ### Utils
@@ -57,7 +57,7 @@ import {
   escapeYqlValue,
   processGmailIntent,
   dateToUnixTimestamp
-} from 'vespa-ts/utils';
+} from '@xyne/vespa-ts/utils';
 ```
 
 ### Errors
@@ -69,24 +69,24 @@ import {
   ErrorRetrievingDocuments,
   ErrorInsertingDocument,
   ErrorDeletingDocuments
-} from 'vespa-ts/errors';
+} from '@xyne/vespa-ts/errors';
 ```
 
 ### Client
 
 ```typescript
 // Import specific client implementations
-import { ProductionVespaClient } from 'vespa-ts/client';
-import vespaClient from 'vespa-ts/client'; // default client
+import { ProductionVespaClient } from '@xyne/vespa-ts/client';
+import vespaClient from '@xyne/vespa-ts/client'; // default client
 ```
 
 ## Usage Example
 
 ```typescript
-import { createVespaService, ConsoleLogger } from 'vespa-ts';
-import type { VespaDependencies } from 'vespa-ts';
-import { VespaSearchResponseToSearchResult } from 'vespa-ts/mappers';
-import { scale } from 'vespa-ts/utils';
+import { createVespaService, ConsoleLogger } from '@xyne/vespa-ts';
+import type { VespaDependencies } from '@xyne/vespa-ts';
+import { VespaSearchResponseToSearchResult } from '@xyne/vespa-ts/mappers';
+import { scale } from '@xyne/vespa-ts/utils';
 
 // Create a logger
 const logger = new ConsoleLogger({ service: 'my-app' });
@@ -134,12 +134,12 @@ async function search(query: string) {
 
 ## Available Modules
 
-- `vespa-ts` - Core functions and main API
-- `vespa-ts/types` - TypeScript type definitions
-- `vespa-ts/mappers` - Data transformation functions
-- `vespa-ts/utils` - Utility functions
-- `vespa-ts/errors` - Custom error classes
-- `vespa-ts/client` - Client implementations
+- `@xyne/vespa-ts` - Core functions and main API
+- `@xyne/vespa-ts/types` - TypeScript type definitions
+- `@xyne/vespa-ts/mappers` - Data transformation functions
+- `@xyne/vespa-ts/utils` - Utility functions
+- `@xyne/vespa-ts/errors` - Custom error classes
+- `@xyne/vespa-ts/client` - Client implementations
 
 ## Development
 

@@ -1,5 +1,5 @@
 {
-  "name": "vespa-ts",
+  "name": "@xyne/vespa-ts",
   "version": "1.0.0",
   "description": "A reusable TypeScript package for interacting with Vespa search engine with dependency injection support",
   "main": "dist/index.js",
