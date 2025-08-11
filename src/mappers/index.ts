@@ -162,8 +162,8 @@ const maxSearchChunks = 1
 
 export const VespaSearchResponseToSearchResult = (
   resp: VespaSearchResponse,
+  textChunker: ITextChunker,
   email?: string,
-  textChunker?: ITextChunker,
 ): SearchResponse => {
   const { root, trace } = resp
   const children = root.children || []

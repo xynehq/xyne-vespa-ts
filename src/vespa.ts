@@ -1208,6 +1208,7 @@ insertUser = async (user: VespaUser) => {
   query: string,
   email: string,
   limit = this.config.page,
+  isSlackConnected: boolean,
   timestampRange?: { to: number; from: number } | null,
 ): Promise<AppEntityCounts> => {
   const hasProdConfig = Boolean(
@@ -1236,7 +1237,7 @@ insertUser = async (user: VespaUser) => {
   }
 
   // either no prod config, or prod call errored
-  return await this._groupVespaSearch(query, email, limit, timestampRange)
+  return await this._groupVespaSearch(query, email, limit, timestampRange,isSlackConnected)
 }
  async _groupVespaSearch(
   query: string,

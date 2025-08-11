@@ -1,6 +1,9 @@
 {
   "name": "@xyne/vespa-ts",
   "version": "1.0.0",
+  "publishConfig": {
+  "access": "public"
+},
   "description": "A reusable TypeScript package for interacting with Vespa search engine with dependency injection support",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -57,11 +60,15 @@
     "dependency-injection",
     "search-engine"
   ],
-  "author": "Your Name",
+  "author": "Junaid Shirur",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/vespa-ts.git"
+    "url": "https://github.com/xynehq/xyne-vespa-ts.git"
+  },
+  "homepage": "https://github.com/xynehq/xyne-vespa-ts#readme",
+  "bugs": {
+    "url": "https://github.com/xynehq/xyne-vespa-ts/issues"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^16.0.1",
