@@ -56,11 +56,13 @@ import {
   type AutocompleteResults,
   type SearchResponse,
   type AppEntityCounts,
+  chatContainerSchema,
+  ChatContainerResponseSchema,
 } from "../types"
 
 import type { z } from "zod"
 import { scale } from "../utils"
-import type { ITextChunker } from "../types"
+import type { ITextChunker, VespaChatContainerSearch } from "../types"
 
 function countHiTags(str: string): number {
   // Regular expression to match both <hi> and </hi> tags
@@ -218,8 +220,8 @@ export const VespaSearchResponseToSearchResult = (
           ) {
             // Directly use child.fields
             const fields = child.fields as VespaMailSearch & { type?: string }
-            if (email && fields.userMap && typeof fields.userMap === 'object')
-              fields.docId = (fields.userMap as Record<string, string>)[email] || fields.docId
+            if (email && fields.userMap)
+              fields.docId = fields.userMap[email] || fields.docId
             fields.type = mailSchema
             fields.relevance = child.relevance
             // matchfeatures is already part of fields
@@ -245,7 +247,7 @@ export const VespaSearchResponseToSearchResult = (
             fields.chunks_summary = fields.description && textChunker
               ? textChunker.chunkDocument(fields.description)
                   .map((v) => v.chunk)
-                  .sort((a: string, b: string) => countHiTags(b) - countHiTags(a))
+                  .sort((a, b) => countHiTags(b) - countHiTags(a))
                   .slice(0, maxSearchChunks)
               : []
             // This line seems redundant as it's assigned above? Keeping it for now.
@@ -278,6 +280,10 @@ export const VespaSearchResponseToSearchResult = (
             const fields = child.fields as VespaChatMessageSearch & {
               type?: string
             }
+            // Convert seconds to milliseconds
+            fields.createdAt = Number(fields.createdAt ?? 0) * 1000
+            fields.updatedAt = Number(fields.updatedAt ?? 0) * 1000
+            fields.deletedAt = Number(fields.deletedAt ?? 0) * 1000
             fields.type = chatMessageSchema
             fields.relevance = child.relevance
             fields.attachmentIds = []
@@ -286,6 +292,27 @@ export const VespaSearchResponseToSearchResult = (
               fields.teamId = ""
             }
             return ChatMessageResponseSchema.parse(fields)
+          } else if (
+            (child.fields as VespaChatContainerSearch).sddocname ===
+            chatContainerSchema
+          ) {
+            const fields = child.fields as VespaChatContainerSearch & {
+              type?: string
+            }
+            fields.type = chatContainerSchema
+            fields.relevance = child.relevance
+            // Ensure fields has the necessary properties
+            if (!fields.entity) {
+              fields.entity = SlackEntity.Channel
+            }
+            if (!fields.topic) {
+              fields.topic = ""
+            }
+            if (!fields.description) {
+              fields.description = ""
+            }
+
+            return ChatContainerResponseSchema.parse(fields)
           } else if (
             (child.fields as { sddocname?: string }).sddocname ===
             dataSourceFileSchema

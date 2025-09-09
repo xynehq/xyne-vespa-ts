@@ -1284,6 +1284,30 @@ export const UserResponseSchema = VespaUserSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
+  export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
+  docId: true,
+  name: true,
+  app: true,
+  entity: true,
+  updatedAt: true,
+  isPrivate: true,
+  isArchived: true,
+  isGeneral: true,
+  isIm: true,
+  isMpim: true,
+  topic: true,
+  description: true,
+  count: true,
+})
+  .extend({
+    type: z.literal(chatContainerSchema),
+    relevance: z.number(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -1293,6 +1317,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   EventResponseSchema,
   MailAttachmentResponseSchema,
   ChatMessageResponseSchema,
+  ChatContainerResponseSchema
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
