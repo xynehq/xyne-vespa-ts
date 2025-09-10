@@ -20,6 +20,7 @@ import {
   type Span,
   SlackEntity,
   chatContainerSchema,
+  KbItemsSchema,
 } from "./types";
 import type {
   VespaAutocompleteResponse,
@@ -319,8 +320,8 @@ insertUser = async (user: VespaUser) => {
 // TODO: it seems the owner part is complicating things
  HybridDefaultProfile = (
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -343,7 +344,19 @@ insertUser = async (user: VespaUser) => {
   // ToDo we have to handle this filter as we are applying multiple times app filtering
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
-    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+    return `${
+      app
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
+          : "and app contains @app"
+        : ""
+    } ${
+      entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
+          : "and entity contains @entity"
+        : ""
+    }`.trim()
   }
 
   // Helper function to build exclusion condition
@@ -506,7 +519,8 @@ insertUser = async (user: VespaUser) => {
           break
       }
     })
-    newSources = this.getSchemaSources().split(", ")
+    newSources = newSources
+      .split(", ")
       .filter((source) => !sourcesToExclude.includes(source))
       .join(", ")
   }
@@ -592,8 +606,8 @@ insertUser = async (user: VespaUser) => {
 
  HybridDefaultProfileForAgent = (
   hits: number,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   profile: SearchModes = SearchModes.NativeRank,
   timestampRange?: { to: number | null; from: number | null } | null,
   excludedIds?: string[],
@@ -602,6 +616,14 @@ insertUser = async (user: VespaUser) => {
   dataSourceIds: string[] = [],
   intent: Intent | null = null,
   channelIds: string[] = [],
+  collectionSelections: Array<{
+    collectionIds?: string[]
+    collectionFolderIds?: string[]
+    collectionFileIds?: string[]
+  }> = [],
+  driveIds: string[] = [],
+  selectedItem: {} = {},
+  clVespaIds: string[] = [],
 ): YqlProfile => {
   // Helper function to build timestamp conditions
   const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -614,9 +636,30 @@ insertUser = async (user: VespaUser) => {
     }
     return conditions.join(" and ")
   }
+
+  // helper function to build docId inclusion condition
+  const buildDocsInclusionCondition = (fieldName: string, ids: string[]) => {
+    if (!ids || ids.length === 0) return ""
+
+    const conditions = ids.map((id) => `${fieldName} contains '${id.trim()}'`)
+    return conditions.join(" or ")
+  }
+
   // Helper function to build app/entity filter
   const buildAppEntityFilter = () => {
-    return `${app ? "and app contains @app" : ""} ${entity ? "and entity contains @entity" : ""}`.trim()
+    return `${
+      app
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and ${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")}`
+          : "and app contains @app"
+        : ""
+    } ${
+      entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and ${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")}`
+          : "and entity contains @entity"
+        : ""
+    }`.trim()
   }
   // Helper function to build exclusion condition
   const buildExclusionCondition = () => {
@@ -678,7 +721,15 @@ insertUser = async (user: VespaUser) => {
   const buildGoogleDriveYQL = () => {
     const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
     const appOrEntityFilter = buildAppEntityFilter()
+    // let driveItem:string [] = []
+    // if we have some DriveIds then we are going to fetch all the items in that folder
     const intentFilter = this.buildIntentFilter(intent)
+    let driveItem: string[] = []
+    if ((selectedItem as any)[Apps.GoogleDrive]) {
+      driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
+    }
+
+    const driveIdConditions = buildDocsInclusionCondition("docId", driveIds)
     return `
       (
         (
@@ -689,6 +740,7 @@ insertUser = async (user: VespaUser) => {
         ${timestampRange ? `and (${fileTimestamp})` : ""}
         and permissions contains @email
         ${appOrEntityFilter}
+        ${driveIdConditions ? `and ${driveIdConditions}` : ""}
         ${intentFilter}
       )
      `
@@ -712,10 +764,10 @@ insertUser = async (user: VespaUser) => {
   }
   const buildSlackYQL = () => {
     const appOrEntityFilter = buildAppEntityFilter()
-    const channelIdConditions =
-      channelIds && channelIds.length > 0
-        ? `(${channelIds.map((id) => `channelId contains '${id.trim()}'`).join(" or ")})`
-        : ""
+    let channelIds: string[] = []
+    const intentFilter = this.buildIntentFilter(intent)
+    channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
+    const channelIdConditions = buildDocsInclusionCondition("docId", channelIds)
 
     return `
       (
@@ -733,14 +785,15 @@ insertUser = async (user: VespaUser) => {
   const buildDataSourceFileYQL = () => {
     // For DataSourceFile, app and entity might not be directly applicable in the same way,
     // but keeping appOrEntityFilter for consistency if needed for other metadata.
-    const appOrEntityFilter = buildAppEntityFilter()
-    const dataSourceIdConditions =
-      dataSourceIds && dataSourceIds.length > 0
-        ? `(${dataSourceIds.map((id) => `dataSourceId contains '${id.trim()}'`).join(" or ")})`
-        : "false" // If no specific IDs, this part of the query should not match anything
 
-    // Permissions for datasource_file are based on 'uploadedBy' matching the user's email
-    // and the dataSourceId matching one of the allowed ones.
+    const dsIds = (selectedItem as Record<string, unknown>)[
+      Apps.DataSource
+    ] as any
+    const dataSourceIdConditions = buildDocsInclusionCondition(
+      "dataSourceId",
+      dsIds,
+    )
+
     return `
       (
         (
@@ -749,6 +802,53 @@ insertUser = async (user: VespaUser) => {
           ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
         ) 
         and ${dataSourceIdConditions}
+      )`
+  }
+
+  const buildCollectionConditions = (clVespaIds: string[] = []) => {
+    const collectionIds: string[] = []
+    const collectionFolderIds: string[] = []
+    const collectionFileIds: string[] = []
+
+    for (const selection of collectionSelections) {
+      if (selection.collectionIds) {
+        collectionIds.push(...selection.collectionIds)
+      }
+      if (selection.collectionFolderIds) {
+        collectionFolderIds.push(...selection.collectionFolderIds)
+      }
+      if (selection.collectionFileIds) {
+        collectionFileIds.push(...selection.collectionFileIds)
+      }
+    }
+    let conditions: string[] = []
+
+    // Handle entire collections - use clId filter (efficient)
+    if (collectionIds.length > 0) {
+      const collectionCondition = `(${collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
+      conditions.push(collectionCondition)
+    }
+
+    if (clVespaIds.length > 0) {
+      const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+      conditions.push(folderCondition)
+    }
+
+
+    return conditions
+  }
+
+  const buildCollectionFileYQL = (conditions: string[]) => {
+    const finalCondition = `(${conditions.join(" or ")})`
+    // Collection files use clId for collections and docId for folders/files
+    return `
+      (
+        (
+          ({targetHits:${hits}}userInput(@query))
+          or
+          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
+        ) 
+        and ${finalCondition}
       )`
   }
 
@@ -768,7 +868,8 @@ insertUser = async (user: VespaUser) => {
           if (!sources.includes(mailSchema)) sources.push(mailSchema)
           break
         case Apps.GoogleDrive:
-          appQueries.push(buildGoogleDriveYQL())
+          const googleDriveYQL = buildGoogleDriveYQL()
+          appQueries.push(googleDriveYQL)
           if (!sources.includes(fileSchema)) sources.push(fileSchema)
           break
         case Apps.GoogleCalendar:
@@ -784,20 +885,25 @@ insertUser = async (user: VespaUser) => {
             sources.push(chatContainerSchema)
           break
         case Apps.DataSource:
-          // This case is specifically for when 'Apps.DataSource' is in AllowedApps.
-          // The actual filtering by specific dataSourceIds happens in buildDataSourceFileYQL.
-          if (dataSourceIds && dataSourceIds.length > 0) {
-            appQueries.push(buildDataSourceFileYQL())
-            if (!sources.includes(dataSourceFileSchema))
-              sources.push(dataSourceFileSchema)
+          appQueries.push(buildDataSourceFileYQL())
+          if (!sources.includes(dataSourceFileSchema))
+            sources.push(dataSourceFileSchema)
+          break
+        case Apps.KnowledgeBase:
+          if (collectionSelections && collectionSelections.length > 0) {
+            const collectionConditions = buildCollectionConditions(clVespaIds)
+            if (collectionConditions.length > 0) {
+              const collectionQuery = buildCollectionFileYQL(collectionConditions)
+              appQueries.push(collectionQuery)
+              if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
+            } else {
+              this.logger.warn(
+                "Apps.KnowledgeBase specified for agent, but no valid collection conditions found. Skipping KnowledgeBase search part.",
+              )
+            }
           } else {
-            // If Apps.DataSource is allowed but no specific IDs, this implies a broader search
-            // across all accessible data sources. This might be too broad or not the intended behavior.
-            // For now, if no specific IDs, we don't add a query part for generic DataSource search.
-            // This means an agent configured with "data-source" but no specific IDs won't search them
-            // unless other app types are also specified.
             this.logger.warn(
-              "Apps.DataSource specified for agent, but no specific dataSourceIds provided. Skipping generic DataSource search part.",
+              "Apps.KnowledgeBase specified for agent, but no specific collectionIds provided. Skipping generic KnowledgeBase search part.",
             )
           }
           break
@@ -819,7 +925,7 @@ insertUser = async (user: VespaUser) => {
   }
 
   // Combine all queries
-  const combinedQuery = appQueries.join("or")
+  const combinedQuery = appQueries.join("\n    or\n    ")
   const exclusionCondition = buildExclusionCondition()
   const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
 
@@ -827,9 +933,7 @@ insertUser = async (user: VespaUser) => {
   // or no valid AllowedApps were given), then the YQL query will be invalid.
   const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
 
-  return {
-    profile: profile,
-    yql: `
+  const finalYql = `
     select *
     ${fromClause} 
     where
@@ -840,7 +944,11 @@ insertUser = async (user: VespaUser) => {
       ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
     )
     ;
-    `,
+    `
+
+  return {
+    profile: profile,
+    yql: finalYql,
   }
 }
 
@@ -1286,11 +1394,11 @@ insertUser = async (user: VespaUser) => {
   }
 }
 
- searchVespa = async (
+searchVespa = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   {
     alpha = 0.5,
     limit = this.config.page,
@@ -1307,43 +1415,6 @@ insertUser = async (user: VespaUser) => {
     intent = {},
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
-  const hasProdConfig = Boolean(
-    this.config.productionServerUrl && this.config.apiKey,
-  )
-
-  if (hasProdConfig) {
-    try {
-      const client = new ProductionVespaClient(
-        this.config.productionServerUrl!,
-        this.config.apiKey!,
-      )
-      return await client.makeApiCall("search-vespa", {
-        query,
-        email,
-        app,
-        entity,
-        alpha,
-        limit,
-        offset,
-        timestampRange,
-        excludedIds,
-        notInMailLabels,
-        rankProfile,
-        requestDebug,
-        span,
-        maxHits,
-        recencyDecayRate,
-        intent,
-      })
-    } catch (err) {
-      this.logger.warn(
-        "Production search Vespa call failed, falling back to local:",
-        err,
-      )
-      // fall through to local
-    }
-  }
-
   // either no prod config, or prod call errored
   return await this._searchVespa(query, email, app, entity, {
     alpha,
@@ -1361,11 +1432,12 @@ insertUser = async (user: VespaUser) => {
     intent,
   })
 }
-async  _searchVespa(
+
+ _searchVespa(
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   {
     alpha = 0.5,
     limit = this.config.page,
@@ -1439,7 +1511,7 @@ async  _searchVespa(
 
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   try {
-    let result = await this.vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+    let result =  this.vespa.search<VespaSearchResponse>(hybridDefaultPayload)
     return result
   } catch (error) {
     this.logger.error(`Search failed with error:`, error)
@@ -1605,8 +1677,8 @@ async  _searchVespa(
  searchVespaAgent = async (
   query: string,
   email: string,
-  app: Apps | null,
-  entity: Entity | null,
+  app: Apps | Apps[] | null,
+  entity: Entity | Entity[] | null,
   Apps: Apps[] | null,
   {
     alpha = 0.5,
@@ -1623,6 +1695,10 @@ async  _searchVespa(
     dataSourceIds = [], // Ensure dataSourceIds is destructured here
     intent = null,
     channelIds = [],
+    collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
+    driveIds = [], // docIds
+    selectedItem = {},
+    clVespaIds
   }: Partial<VespaQueryConfig>,
 ): Promise<VespaSearchResponse> => {
   // Determine the timestamp cutoff based on lastUpdated
@@ -1641,6 +1717,10 @@ async  _searchVespa(
     dataSourceIds, // Pass dataSourceIds here
     intent,
     channelIds,
+    collectionSelections, // Pass unified collectionSelections here
+    driveIds,
+    selectedItem,
+    clVespaIds
   )
 
   const hybridDefaultPayload = {
@@ -1666,23 +1746,17 @@ async  _searchVespa(
   span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
   return this.vespa
     .search<VespaSearchResponse>(hybridDefaultPayload)
-    .catch((err) => {
-      if (this.vespa instanceof ProductionVespaClient) {
-        this.logger.warn(
-          err,
-          "Prod vespa failed in searchVespaAgent for search, trying fallback",
-        )
-        return this.fallbackVespa.search<VespaSearchResponse>(hybridDefaultPayload)
-      }
+    .catch((err: any) => {
       throw err
     })
-    .catch((error) => {
+    .catch((error: any) => {
       throw new ErrorPerformingSearch({
         cause: error as Error,
-        sources: this.getSchemaSources(),
+        sources: AllSources.join(", "),
       })
     })
 }
+
 
  GetDocument = async (schema: VespaSchema, docId: string) => {
   const opts = { namespace: this.config.namespace, docId, schema }
@@ -2142,11 +2216,17 @@ hashQuery = (query: string) => {
     channelIds,
   } = params
 
+  const schemas = Array.isArray(schema) ? schema : [schema]
+  const schemasString = schemas.join(", ")
   // Construct conditions based on parameters
   let conditions: string[] = []
 
   // App condition
-  if (app) {
+  if (Array.isArray(app) && app.length > 0) {
+    conditions.push(
+      app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or "),
+    )
+  } else if (!Array.isArray(app) && app) {
     conditions.push(`app contains '${escapeYqlValue(app)}'`)
   }
 
@@ -2158,35 +2238,45 @@ hashQuery = (query: string) => {
   }
 
   // Entity condition
-  if (entity) {
+  if (Array.isArray(entity) && entity.length > 0) {
+    conditions.push(
+      entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or "),
+    )
+  } else if (!Array.isArray(entity) && entity) {
     conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
   }
 
   // Permissions or owner condition based on schema
-  if (schema === dataSourceFileSchema) {
+  if (schemas.length === 1 && schemas[0] === dataSourceFileSchema) {
     // Temporal fix for datasoure selection
-  } else if (schema !== userSchema) {
+  } else if (!schemas.includes(userSchema)) {
     conditions.push(`permissions contains '${email}'`)
   } else {
     // For user schema
-    if (app !== Apps.GoogleWorkspace) {
+    if (
+      app !== Apps.GoogleWorkspace ||
+      (Array.isArray(app) && !app.includes(Apps.GoogleWorkspace))
+    ) {
       conditions.push(`owner contains '${email}'`)
     }
   }
 
-  let timestampField = ""
+  let timestampField = []
 
   // Choose appropriate timestamp field based on schema
-  if (schema === mailSchema || schema === mailAttachmentSchema) {
-    timestampField = "timestamp"
-  } else if (schema === fileSchema || schema === chatMessageSchema) {
-    timestampField = "updatedAt"
-  } else if (schema === eventSchema) {
-    timestampField = "startTime"
-  } else if (schema === userSchema) {
-    timestampField = "creationTime"
+  if (schemas.includes(mailSchema) || schemas.includes(mailAttachmentSchema)) {
+    timestampField.push("timestamp")
+  } else if (
+    schemas.includes(fileSchema) ||
+    schemas.includes(chatMessageSchema)
+  ) {
+    timestampField.push("updatedAt")
+  } else if (schemas.includes(eventSchema)) {
+    timestampField.push("startTime")
+  } else if (schemas.includes(userSchema)) {
+    timestampField.push("creationTime")
   } else {
-    timestampField = "updatedAt"
+    timestampField.push("updatedAt")
   }
 
   // Timestamp conditions
@@ -2196,12 +2286,12 @@ hashQuery = (query: string) => {
 
     if (timestampRange.from) {
       timeConditions.push(
-        `${fieldForRange} >= ${new Date(timestampRange.from).getTime()}`,
+        `${fieldForRange.map((field) => `${field} >= ${new Date(timestampRange.from!).getTime()}`).join(" or ")}`,
       )
     }
     if (timestampRange.to) {
       timeConditions.push(
-        `${fieldForRange} <= ${new Date(timestampRange.to).getTime()}`,
+        `${fieldForRange.map((field) => `${field} <= ${new Date(timestampRange.to!).getTime()}`).join(" or ")}`,
       )
     }
     if (timeConditions.length > 0) {
@@ -2266,8 +2356,12 @@ hashQuery = (query: string) => {
     ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
     : ""
 
-  // Construct YQL query with limit and offset
-  const yql = `select * from sources ${schema} ${whereClause} ${orderByClause}`
+  // Construct YQL query with proper clause ordering and spacing
+  let yql = `select * from sources ${schema} ${whereClause}`
+
+  if (orderByClause) {
+    yql += ` ${orderByClause}`
+  }
 
   this.logger.info(`[getItems] YQL Query: ${yql}`)
   this.logger.info(`[getItems] Query Details:`, {
@@ -2283,27 +2377,15 @@ hashQuery = (query: string) => {
   const searchPayload = {
     yql,
     "ranking.profile": "unranked",
-    hits: limit,
-    ...(offset ? { offset } : {}),
     timeout: "30s",
   }
 
   return this.vespa
     .getItems(searchPayload)
-    .catch((err) => {
-      if (this.vespa instanceof ProductionVespaClient) {
-        this.logger.warn(
-          err,
-          "Prod vespa failed in getItems for search, trying fallback",
-        )
-        return this.fallbackVespa.getItems(searchPayload)
-      }
-      throw err
-    })
     .catch((error) => {
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
-        sources: schema,
+        sources: JSON.stringify(schema),
         message: `getItems failed for schema ${schema}`,
       })
       this.logger.error(searchError, "Error in getItems function")
