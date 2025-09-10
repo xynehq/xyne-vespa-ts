@@ -1,9 +1,9 @@
 {
   "name": "@xyne/vespa-ts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publishConfig": {
-  "access": "public"
-},
+    "access": "public"
+  },
   "description": "A reusable TypeScript package for interacting with Vespa search engine with dependency injection support",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
