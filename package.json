@@ -49,7 +49,10 @@
   ],
   "scripts": {
     "build": "tsc && rollup -c",
-    "dev": "tsc --watch",
+    "dev": "run-p dev:tsc dev:rollup",
+    "dev:tsc": "tsc --watch",
+    "dev:rollup": "rollup -c --watch --no-watch.clearScreen",
+    "dev:watch": "nodemon --watch src --watch index.ts --ext ts --exec \"bun run build\"",
     "test": "jest",
     "prepublishOnly": "npm run build"
   },
@@ -74,7 +77,10 @@
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@types/bun": "latest",
     "@types/jest": "^29.5.0",
+    "chokidar-cli": "^3.0.0",
     "jest": "^29.5.0",
+    "nodemon": "^3.1.10",
+    "npm-run-all": "^4.1.5",
     "rollup": "^4.46.2",
     "typescript": "^5.0.0"
   },

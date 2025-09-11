@@ -134,7 +134,7 @@ class VespaClient {
       const result = await response.json()
       return result as T
     } catch (error: any) {
-      this.logger.error(`VespaClient.search error:`, error)
+      this.logger.error(`VespaClient.search error: ${JSON.stringify(error)}`, error)
       throw new Error(`Vespa search error: ${error.message}`)
     }
   }
@@ -664,7 +664,7 @@ class VespaClient {
       this.logger.info(`Document ${docId} deleted successfully.`)
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error deleting document ${docId}:  ${errMessage}`,error)
+      this.logger.error(`Error deleting document ${docId}:  ${errMessage}`, error)
       throw new Error(`Error deleting document ${docId}:  ${errMessage}`)
     }
   }
@@ -825,7 +825,7 @@ class VespaClient {
       return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence:  ${errMessage}`,error)
+      this.logger.error(`Error checking documents existence:  ${errMessage}`, error)
       throw error
     }
   }
@@ -889,7 +889,7 @@ class VespaClient {
             docId: foundDoc?.docId ?? "",
             exists: !!foundDoc,
             updatedAt: foundDoc?.updatedAt ?? null,
-            userMap: foundDoc?.userMap as Record<string, string> 
+            userMap: foundDoc?.userMap as Record<string, string>
           }
           return acc
         },
@@ -907,7 +907,7 @@ class VespaClient {
       return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence:  ${errMessage}`,error )
+      this.logger.error(`Error checking documents existence:  ${errMessage}`, error)
       throw error
     }
   }
@@ -964,7 +964,7 @@ class VespaClient {
       return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence:  ${errMessage}`,error)
+      this.logger.error(`Error checking documents existence:  ${errMessage}`, error)
       throw error
     }
   }
@@ -1330,7 +1330,7 @@ class VespaClient {
     }
   }
 
-    async getFolderItem(
+  async getFolderItem(
     docId: string[],
     schema: string,
     entity: string,
@@ -1368,7 +1368,7 @@ class VespaClient {
       )
     }
   }
-    
+
 }
 
 export default VespaClient
