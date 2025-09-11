@@ -1,6 +1,6 @@
 import { z } from "zod"
 import config from "./config"
-export const fileSchema = "file" // Replace with your actual schema name
+export const fileSchema = "file"
 export const userSchema = "user"
 
 // calendar
@@ -60,6 +60,12 @@ export enum Apps {
   DataSource = "data-source",
   KnowledgeBase = "KnowledgeBase",
   WebSearch = "web-search",
+
+
+  // Microsoft apps (mirroring Google structure)
+  MicrosoftDrive = "microsoft-drive",
+  MicrosoftOutlook = "microsoft-outlook",
+  MicrosoftCalendar = "microsoft-calendar",
 }
 
 export enum WebSearchEntity {
@@ -78,6 +84,11 @@ export enum GooglePeopleEntity {
   Contacts = "Contacts",
   OtherContacts = "OtherContacts",
   AdminDirectory = "AdminDirectory",
+}
+// Microsoft entities (mirroring Google structure)
+export enum MicrosoftPeopleEntity {
+  Contacts = "Contacts",
+  OtherContacts = "OtherContacts",
 }
 
 // the vespa schemas
@@ -170,6 +181,8 @@ export enum DataSourceEntity {
   DataSourceFile = "data_source_file",
 }
 
+export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
+
 export const FileEntitySchema = z.nativeEnum(DriveEntity)
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
@@ -180,7 +193,9 @@ export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
-
+export type MicrosoftPeopleEntityType = z.infer<
+  typeof MicrosoftPeopleEntitySchema
+>
 
 export const entitySchema = z.union([
   SystemEntitySchema,
@@ -194,6 +209,7 @@ export const entitySchema = z.union([
   DataSourceEntitySchema,
   WebSearchEntitySchema,
   KnowledgeBaseEntitySchema,
+  MicrosoftPeopleEntitySchema,
 ])
 
 export type Entity =
@@ -208,6 +224,7 @@ export type Entity =
   | DataSourceEntity
   | KnowledgeBaseEntity
   | WebSearchEntity
+  | MicrosoftPeopleEntityType
 
 export type WorkspaceEntity = DriveEntity
 
@@ -242,7 +259,7 @@ export const VespaFileSchema = z.object({
   chunks: z.array(z.string()),
   owner: z.string().nullable(),
   ownerEmail: z.string().nullable(),
-  photoLink: z.string().nullable(),
+  photoLink: z.string().nullable().optional(),
   permissions: z.array(z.string()),
   mimeType: z.string().nullable(),
   metadata: Metadata,
@@ -402,7 +419,10 @@ export const VespaUserSchema = z
     name: z.string().optional(), //.min(1),
     email: z.string().min(1).email(),
     app: z.nativeEnum(Apps),
-    entity: z.nativeEnum(GooglePeopleEntity),
+    entity: z.union([
+      z.nativeEnum(GooglePeopleEntity),
+      z.nativeEnum(MicrosoftPeopleEntity),
+    ]),
     gender: z.string().optional(),
     photoLink: z.string().optional(),
     aliases: z.array(z.string()).optional(),
@@ -1365,7 +1385,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
     rankfeatures: z.any().optional(),
   })
 
-  export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
+export const ChatContainerResponseSchema = VespaChatContainerSchema.pick({
   docId: true,
   name: true,
   app: true,
@@ -1387,7 +1407,7 @@ export const UserResponseSchema = VespaUserSchema.pick({
     rankfeatures: z.any().optional(),
   })
   .strip()
-  
+
 export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
   docId: true,
   fileName: true,
@@ -1425,7 +1445,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   KbFileResponseSchema,
 ])
 
-  
+
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
 
 export const SearchResponseSchema = z.object({
@@ -1503,7 +1523,7 @@ export type VespaQueryConfig = {
   span: Span | null
   maxHits: number
   recencyDecayRate: number
-  dataSourceIds?: string[] 
+  dataSourceIds?: string[]
   isIntentSearch?: boolean
   intent?: Intent | null
   channelIds?: string[]
@@ -1515,7 +1535,7 @@ export type VespaQueryConfig = {
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?: {}
   isSlackConnected?: boolean
-  clVespaIds? : string[]
+  clVespaIds?: string[]
 }
 
 
@@ -1564,7 +1584,7 @@ interface Chunk {
   chunk: string
   chunkIndex: number
 }
-export interface ITextChunker{
+export interface ITextChunker {
   chunkDocument(text: string): Chunk[];
 }
 /**
