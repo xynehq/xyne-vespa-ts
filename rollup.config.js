@@ -19,7 +19,11 @@ const createConfig = (input, outputFile) => ({
       preferBuiltins: false
     })
   ],
-  external
+  external,
+  watch: {
+    include: 'dist/**',
+    exclude: 'node_modules/**'
+  }
 });
 
 export default [
