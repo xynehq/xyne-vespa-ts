@@ -1337,7 +1337,10 @@ class VespaClient {
     email: string,
   ): Promise<VespaSearchResponse> {
     const yqlIds = docId.map((id) => `parentId contains '${id}'`).join(" or ")
-    const yqlQuery = `select * from sources ${schema} where ${yqlIds} and (permissions contains '${email}' or ownerEmail contains '${email}')`
+    let yqlQuery = `select * from sources ${schema} where ${yqlIds} and (permissions contains '${email}' or ownerEmail contains '${email}')`
+    if (!docId.length) {
+      yqlQuery = `select * from sources ${schema} where (metadata contains '{\"parents\":[]}' or (metadata matches 'My Drive')) and (permissions contains '${email}' or ownerEmail contains '${email}') limit 400 `
+    }
     const url = `${this.vespaEndpoint}/search/`
     try {
       const payload = {
