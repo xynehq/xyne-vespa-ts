@@ -1339,6 +1339,9 @@ class VespaClient {
     const yqlIds = docId.map((id) => `parentId contains '${id}'`).join(" or ")
     let yqlQuery 
     if (!docId.length) {
+      // "My Drive" is the special root directory name that Google Drive uses internally
+      // while Ingestion we don't get the My Drive Folder , but all its children has parent Name as My Drive
+      // to get the items inside My Drive we are using the regex match
       yqlQuery = `select * from sources ${schema} where (metadata contains '{\"parents\":[]}' or (metadata matches 'My Drive')) and (permissions contains '${email}' or ownerEmail contains '${email}') limit 400 `
     }
     else{
