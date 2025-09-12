@@ -75,8 +75,6 @@ import {
 ### Client
 
 ```typescript
-// Import specific client implementations
-import { ProductionVespaClient } from '@xyne/vespa-ts/client';
 import vespaClient from '@xyne/vespa-ts/client'; // default client
 ```
 
@@ -124,13 +122,6 @@ async function search(query: string) {
   }
 }
 ```
-
-## Benefits of Modular Imports
-
-1. **Tree Shaking**: Only import what you need, reducing bundle size
-2. **Better Organization**: Separate concerns into logical modules
-3. **Type Safety**: Import only the types you need
-4. **Flexibility**: Mix and match imports based on your use case
 
 ## Available Modules
 
