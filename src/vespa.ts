@@ -1283,9 +1283,12 @@ export class VespaService {
     email: string,
     limit = this.config.page,
     isSlackConnected: boolean,
+    isGmailConnected:boolean,
+    isCalendarConnected:boolean,
+    isDriveConnected:boolean,
     timestampRange?: { to: number; from: number } | null,
   ): Promise<AppEntityCounts> => {
-    return await this._groupVespaSearch(query, email, limit, timestampRange, isSlackConnected)
+    return await this._groupVespaSearch(query, email, limit, timestampRange, isSlackConnected,isGmailConnected,isCalendarConnected,isDriveConnected)
   }
   async _groupVespaSearch(
     query: string,
@@ -1293,11 +1296,22 @@ export class VespaService {
     limit = this.config.page,
     timestampRange?: { to: number; from: number } | null,
     isSlackConnected?: boolean,
+    isGmailConnected?: boolean,
+    isCalendarConnected?: boolean,
+    isDriveConnected?: boolean,
   ): Promise<AppEntityCounts> {
     let excludedApps: Apps[] = []
     try {
 
-
+      if(!isDriveConnected){
+        excludedApps.push(Apps.GoogleDrive)
+      }
+      if(!isCalendarConnected){
+        excludedApps.push(Apps.GoogleCalendar)
+      }
+      if(!isGmailConnected){
+        excludedApps.push(Apps.Gmail)
+      }
       if (!isSlackConnected) {
         excludedApps.push(Apps.Slack)
       }
@@ -1353,6 +1367,10 @@ export class VespaService {
       recencyDecayRate = 0.02,
       isIntentSearch = false,
       intent = {},
+      isSlackConnected,
+      isCalendarConnected,
+      isDriveConnected,
+      isGmailConnected,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // either no prod config, or prod call errored
@@ -1370,6 +1388,10 @@ export class VespaService {
       recencyDecayRate,
       isIntentSearch,
       intent,
+      isSlackConnected,
+      isCalendarConnected,
+      isDriveConnected,
+      isGmailConnected
     })
   }
 
@@ -1393,6 +1415,9 @@ export class VespaService {
       isIntentSearch = false,
       intent = {},
       isSlackConnected = false,
+      isCalendarConnected = false,
+      isDriveConnected = false,
+      isGmailConnected = false,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1402,10 +1427,19 @@ export class VespaService {
     // Check if Slack sync job exists for the user (only for local vespa)
     let excludedApps: Apps[] = []
     try {
-
+      if(!isDriveConnected){
+        excludedApps.push(Apps.GoogleDrive)
+      }
+      if(!isCalendarConnected){
+        excludedApps.push(Apps.GoogleCalendar)
+      }
+      if(!isGmailConnected){
+        excludedApps.push(Apps.Gmail)
+      }
       if (!isSlackConnected) {
         excludedApps.push(Apps.Slack)
       }
+      
     } catch (error) {
       // If no Slack connector is found, this is normal - exclude Slack from search
       // Only log as debug since this is expected behavior for users without Slack
@@ -1414,7 +1448,7 @@ export class VespaService {
       )
       excludedApps.push(Apps.Slack)
     }
-
+    
     let { yql, profile } = this.HybridDefaultProfile(
       limit,
       app,
