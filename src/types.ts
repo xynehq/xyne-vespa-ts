@@ -1535,6 +1535,9 @@ export type VespaQueryConfig = {
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?: {}
   isSlackConnected?: boolean
+  isDriveConnected?: boolean
+  isGmailConnected?: boolean
+  isCalendarConnected?: boolean
   clVespaIds?: string[]
 }
 
