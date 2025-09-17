@@ -1,3 +1,3 @@
-import vespaClient from "./vespaClient";
+import vespaClient from "./vespaClient"
 
-export default vespaClient; 
+export default vespaClient
