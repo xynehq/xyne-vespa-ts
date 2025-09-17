@@ -45,7 +45,7 @@ import type {
   GetThreadItemsParams,
 } from "./types";
 import { SearchModes } from "./types";
-import { dateToUnixTimestamp, escapeYqlValue, getErrorMessage, processGmailIntent } from "./utils";
+import { dateToUnixTimestamp, escapeYqlValue, formatYqlToReadable, getErrorMessage, processGmailIntent } from "./utils";
 import { TimestampCondition } from "./yql/conditions";
 import { YqlBuilder } from "./yql/yqlBuilder";
 import {
@@ -315,7 +315,7 @@ export class VespaService {
       sources: includedApp.join(", "),
     })
   }
-  // TODO: it seems the owner part is complicating things
+
   HybridDefaultProfile = (
     hits: number,
     app: Apps | Apps[] | null,
@@ -364,9 +364,7 @@ export class VespaService {
     }
   }
 
-  /**
-   * Get available sources after filtering out excluded apps
-   */
+
   private getAvailableSources(excludedApps?: Apps[]): string[] {
     let sources = this.getSchemaSources().split(", ")
 
@@ -399,17 +397,12 @@ export class VespaService {
     return sources
   }
 
-  /**
-   * Get list of apps to include in search (all apps minus excluded ones)
-   */
+
   private getIncludedApps(excludedApps?: Apps[]): Apps[] {
     const allApps = Object.values(Apps)
     return allApps.filter((appItem) => !excludedApps?.includes(appItem))
   }
 
-  /**
-   * Build app-specific YQL conditions for each included app
-   */
   private buildAppSpecificQueries(
     includedApps: Apps[],
     hits: number,
@@ -456,9 +449,6 @@ export class VespaService {
     return appConditions
   }
 
-  /**
-   * Build Google Workspace specific condition
-   */
   private buildGoogleWorkspaceCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -474,7 +464,9 @@ export class VespaService {
     ]).parenthesize())
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      permissionBasedConditions.push(new TimestampCondition('creationTime', 'creationTime', timestampRange))
+      permissionBasedConditions.push(
+        new TimestampCondition('creationTime', 'creationTime', timestampRange)
+      )
     }
 
     const hasAppOrEntity = !!(app || entity)
@@ -495,7 +487,6 @@ export class VespaService {
         permissionBasedConditions.push(VespaField.contains('entity', entity))
       }
 
-      permissionBasedConditions.push(PermissionCondition.EmailPermissions('@email'))
     }
 
     if (intent) {
@@ -509,12 +500,10 @@ export class VespaService {
 
     const ownershipBasedConditions = []
 
-    ownershipBasedConditions.push(new OrCondition([
+    ownershipBasedConditions.push(OrCondition.withOwnerPermissions([
       new UserInputCondition('@query', hits),
       new NearestNeighborCondition('chunk_embeddings', 'e', hits)
     ]).parenthesize())
-
-    ownershipBasedConditions.push(PermissionCondition.EmailOwner('@email'))
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       ownershipBasedConditions.push(new TimestampCondition('creationTime', 'creationTime', timestampRange))
@@ -522,26 +511,23 @@ export class VespaService {
 
     if (Array.isArray(app) && app.length > 0) {
       const appConditions = app.map(a => VespaField.contains('app', a))
-      ownershipBasedConditions.push(new OrCondition(appConditions).parenthesize())
+      ownershipBasedConditions.push(OrCondition.withOwnerPermissions(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
       ownershipBasedConditions.push(VespaField.contains('app', app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
       const entityConditions = entity.map(e => VespaField.contains('entity', e))
-      ownershipBasedConditions.push(new OrCondition(entityConditions).parenthesize())
+      ownershipBasedConditions.push(OrCondition.withOwnerPermissions(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
       ownershipBasedConditions.push(VespaField.contains('entity', entity))
     }
 
     const ownershipBasedQuery = new AndCondition(ownershipBasedConditions).parenthesize()
 
-    return new OrCondition([permissionBasedQuery, ownershipBasedQuery])
+    return OrCondition.withoutPermissions([permissionBasedQuery, ownershipBasedQuery])
   }
 
-  /**
-   * Build Gmail specific condition
-   */
   private buildGmailCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -552,7 +538,6 @@ export class VespaService {
   ) {
     const conditions = []
 
-    // Add hybrid search
     conditions.push(new OrCondition([
       new UserInputCondition('@query', hits),
       new NearestNeighborCondition('chunk_embeddings', 'e', hits)
@@ -562,9 +547,6 @@ export class VespaService {
       conditions.push(new TimestampCondition('timestamp', 'timestamp', timestampRange))
     }
 
-    conditions.push(PermissionCondition.EmailPermissions('@email'))
-
-    // mail label exclusions
     if (notInMailLabels && notInMailLabels.length > 0) {
       const labelConditions = notInMailLabels
         .filter(label => label && label.trim())
@@ -593,7 +575,6 @@ export class VespaService {
       conditions.push(VespaField.contains('entity', entity))
     }
 
-    // Add intent filter
     if (intent) {
       const intentCondition = this.buildIntentConditionFromIntent(intent)
       if (intentCondition) {
@@ -604,9 +585,6 @@ export class VespaService {
     return new AndCondition(conditions).parenthesize()
   }
 
-  /**
-   * Build Google Drive specific condition
-   */
   private buildGoogleDriveCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -616,21 +594,15 @@ export class VespaService {
   ) {
     const conditions = []
 
-    // Add hybrid search
     conditions.push(new OrCondition([
       new UserInputCondition('@query', hits),
       new NearestNeighborCondition('chunk_embeddings', 'e', hits)
     ]).parenthesize())
 
-    // Add timestamp conditions
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
     }
 
-    // Add permissions check
-    conditions.push(PermissionCondition.EmailPermissions('@email'))
-
-    // Add app/entity filters
     if (Array.isArray(app) && app.length > 0) {
       const appConditions = app.map(a => VespaField.contains('app', a))
       conditions.push(new OrCondition(appConditions).parenthesize())
@@ -645,7 +617,6 @@ export class VespaService {
       conditions.push(VespaField.contains('entity', entity))
     }
 
-    // Add intent filter
     if (intent) {
       const intentCondition = this.buildIntentConditionFromIntent(intent)
       if (intentCondition) {
@@ -656,9 +627,6 @@ export class VespaService {
     return new AndCondition(conditions).parenthesize()
   }
 
-  /**
-   * Build Google Calendar specific condition
-   */
   private buildGoogleCalendarCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -668,21 +636,15 @@ export class VespaService {
   ) {
     const conditions = []
 
-    // Add hybrid search
     conditions.push(new OrCondition([
       new UserInputCondition('@query', hits),
       new NearestNeighborCondition('chunk_embeddings', 'e', hits)
     ]).parenthesize())
 
-    // Add timestamp conditions
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(new TimestampCondition('startTime', 'startTime', timestampRange))
     }
 
-    // Add permissions check
-    conditions.push(PermissionCondition.EmailPermissions('@email'))
-
-    // Add app/entity filters
     if (Array.isArray(app) && app.length > 0) {
       const appConditions = app.map(a => VespaField.contains('app', a))
       conditions.push(new OrCondition(appConditions).parenthesize())
@@ -697,7 +659,6 @@ export class VespaService {
       conditions.push(VespaField.contains('entity', entity))
     }
 
-    // Add intent filter
     if (intent) {
       const intentCondition = this.buildIntentConditionFromIntent(intent)
       if (intentCondition) {
@@ -708,9 +669,6 @@ export class VespaService {
     return new AndCondition(conditions).parenthesize()
   }
 
-  /**
-   * Build Slack specific condition
-   */
   private buildSlackCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -719,18 +677,15 @@ export class VespaService {
   ) {
     const conditions = []
 
-    // Add hybrid search with text_embeddings for Slack
     conditions.push(new OrCondition([
       new UserInputCondition('@query', hits),
       new NearestNeighborCondition('text_embeddings', 'e', hits)
     ]).parenthesize())
 
-    // Add timestamp conditions
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
     }
 
-    // Add app/entity filters
     if (Array.isArray(app) && app.length > 0) {
       const appConditions = app.map(a => VespaField.contains('app', a))
       conditions.push(new OrCondition(appConditions).parenthesize())
@@ -745,15 +700,9 @@ export class VespaService {
       conditions.push(VespaField.contains('entity', entity))
     }
 
-    // Add permissions check
-    conditions.push(PermissionCondition.EmailPermissions('@email'))
-
     return new AndCondition(conditions).parenthesize()
   }
 
-  /**
-   * Build default condition for other apps
-   */
   private buildDefaultCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -763,22 +712,15 @@ export class VespaService {
   ) {
     const conditions = []
 
-    // Add hybrid search
     conditions.push(new OrCondition([
       new UserInputCondition('@query', hits),
       new NearestNeighborCondition('chunk_embeddings', 'e', hits)
     ]).parenthesize())
 
-    // Add permissions or owner check
-    const permissionCondition = PermissionCondition.EmailPermissions('@email')
-    conditions.push(permissionCondition)
-
-    // Add timestamp conditions
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
     }
 
-    // Add app/entity filters
     if (Array.isArray(app) && app.length > 0) {
       const appConditions = app.map(a => VespaField.contains('app', a))
       conditions.push(new OrCondition(appConditions).parenthesize())
@@ -793,7 +735,6 @@ export class VespaService {
       conditions.push(VespaField.contains('entity', entity))
     }
 
-    // Add intent filter
     if (intent) {
       const intentCondition = this.buildIntentConditionFromIntent(intent)
       if (intentCondition) {
@@ -804,9 +745,7 @@ export class VespaService {
     return new AndCondition(conditions).parenthesize()
   }
 
-  /**
-   * Convert Intent object to YQL condition
-   */
+
   private buildIntentConditionFromIntent(intent: Intent) {
     const intentConditions = []
 
@@ -1730,7 +1669,7 @@ export class VespaService {
       excludedApps,
       intent,
     )
-
+    console.log("Vespa YQL Query: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,

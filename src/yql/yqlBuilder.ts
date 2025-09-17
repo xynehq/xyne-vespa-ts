@@ -24,9 +24,6 @@ import {
 import { Apps, Entity, SearchModes } from '../types';
 import { YqlProfile } from './types';
 
-/**
- * Enterprise-grade YQL Builder with built-in permission handling and syntax validation
- */
 export class YqlBuilder {
     private selectClause: string = 'select *';
     private sourcesClause: string = '';
@@ -55,7 +52,7 @@ export class YqlBuilder {
             offset: options.offset || 0,
             timeout: options.timeout || '2s',
             requirePermissions: options.requirePermissions !== false, // Default to true
-            validateSyntax: options.validateSyntax !== false // Default to true
+            validateSyntax: options.validateSyntax !== true // Default to false
         };
 
         this.permissionWrapper = new PermissionWrapper(userEmail);
