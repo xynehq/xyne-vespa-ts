@@ -130,7 +130,7 @@ export const processGmailIntent = (intent: Intent, logger: ILogger): string[] =>
 }
 
 
- export const dateToUnixTimestamp = (
+export const dateToUnixTimestamp = (
   dateString: string,
   endOfDay: boolean = false,
 ): string => {
@@ -155,3 +155,39 @@ export const processGmailIntent = (intent: Intent, logger: ILogger): string[] =>
 
   return `${seconds}.${microseconds.toString().padStart(6, "0")}`
 }
+
+export const formatYqlToReadable = (yql: string) => {
+  const lines = yql
+    .trim()
+    // Normalize operators to have consistent spacing
+    .replace(/\s+(or|and)\s+/gi, ' $1 ')
+    // Add line breaks before logical operators
+    .replace(/\s+(OR|or)\s+/gi, '\n OR ')
+    .replace(/\s+(AND|and)\s+/gi, '\n AND ')
+    // Handle parentheses - add breaks after opening and before closing
+    .replace(/\(/g, '(\n')
+    .replace(/\)/g, '\n)')
+    .split('\n')
+    .filter(line => line.trim() !== ''); // Remove empty lines
+
+  let indentLevel = 0;
+  const indentSize = 2;
+
+  return lines.map(line => {
+    const trimmed = line.trim();
+
+    // Decrease indent for closing parentheses
+    if (trimmed.startsWith(')')) {
+      indentLevel = Math.max(0, indentLevel - 1);
+    }
+
+    const indentedLine = ' '.repeat(indentLevel * indentSize) + trimmed;
+
+    // Increase indent for opening parentheses
+    if (trimmed.endsWith('(')) {
+      indentLevel++;
+    }
+
+    return indentedLine;
+  }).join('\n');
+};
