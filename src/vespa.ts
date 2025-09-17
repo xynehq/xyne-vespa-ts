@@ -46,6 +46,16 @@ import type {
 } from "./types";
 import { SearchModes } from "./types";
 import { dateToUnixTimestamp, escapeYqlValue, getErrorMessage, processGmailIntent } from "./utils";
+import { TimestampCondition } from "./yql/conditions";
+import { YqlBuilder } from "./yql/yqlBuilder";
+import {
+  OrCondition,
+  AndCondition,
+  UserInputCondition,
+  NearestNeighborCondition,
+  VespaField
+} from "./yql/conditions";
+import { PermissionCondition } from "./yql/permissions";
 import {
   ErrorDeletingDocuments,
   ErrorRetrievingDocuments,
@@ -305,7 +315,6 @@ export class VespaService {
       sources: includedApp.join(", "),
     })
   }
-
   // TODO: it seems the owner part is complicating things
   HybridDefaultProfile = (
     hits: number,
@@ -318,173 +327,51 @@ export class VespaService {
     excludedApps?: Apps[],
     intent?: Intent | null,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
+    try {
+      const availableSources = this.getAvailableSources(excludedApps)
+      const includedApps = this.getIncludedApps(excludedApps)
+
+      const appQueries = this.buildAppSpecificQueries(
+        includedApps,
+        hits,
+        app,
+        entity,
+        timestampRange,
+        notInMailLabels,
+        intent
+      )
+
+      const yqlBuilder = YqlBuilder.create('@email', {
+        sources: availableSources,
+        targetHits: hits,
+      })
+
+      yqlBuilder.from(availableSources)
+      if (appQueries.length > 0) {
+        const combinedCondition = new OrCondition(appQueries)
+        yqlBuilder.where(combinedCondition.parenthesize())
       }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
+
+      if (excludedIds && excludedIds.length > 0) {
+        yqlBuilder.excludeDocIds(excludedIds)
       }
-      return conditions.join(" and ")
-    }
 
-    // ToDo we have to handle this filter as we are applying multiple times app filtering
-    // Helper function to build app/entity filter
-    const buildAppEntityFilter = () => {
-      return `${app
-        ? (Array.isArray(app) && app.length > 0)
-          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-          : "and app contains @app"
-        : ""
-        } ${entity
-          ? Array.isArray(entity) && entity.length > 0
-            ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
-            : "and entity contains @entity"
-          : ""
-        }`.trim()
-    }
+      return yqlBuilder.buildProfile(profile)
 
-    // Helper function to build exclusion condition
-    const buildExclusionCondition = () => {
-      if (!excludedIds || excludedIds.length === 0) return ""
-      return excludedIds.map((id) => `docId contains '${id}'`).join(" or ")
+    } catch (error) {
+      this.logger.error(`Failed to build YQL profile:`, error)
+      throw new Error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
     }
+  }
 
-    // Helper function to build mail label query
-    const buildMailLabelQuery = () => {
-      if (!notInMailLabels || notInMailLabels.length === 0) return ""
-      return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
-    }
-    const intentFilter = intent ? this.buildIntentFilter(intent) : ""
+  /**
+   * Get available sources after filtering out excluded apps
+   */
+  private getAvailableSources(excludedApps?: Apps[]): string[] {
+    let sources = this.getSchemaSources().split(", ")
 
-    // App-specific YQL builders
-    const buildGoogleWorkspaceYQL = () => {
-      const userTimestamp = buildTimestampConditions(
-        "creationTime",
-        "creationTime",
-      )
-      const appOrEntityFilter = buildAppEntityFilter()
-      const hasAppOrEntity = !!(app || entity)
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${userTimestamp.length ? `and (${userTimestamp})` : ""}
-        ${!hasAppOrEntity
-          ? `and app contains "${Apps.GoogleWorkspace}"`
-          : `${appOrEntityFilter} and permissions contains @email`
-        }
-        ${intentFilter}
-      )
-      or
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        and owner contains @email
-        ${userTimestamp.length ? `and ${userTimestamp}` : ""}
-        ${appOrEntityFilter}
-      )`
-    }
-
-    const buildGmailYQL = () => {
-      const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
-      const appOrEntityFilter = buildAppEntityFilter()
-      const mailLabelQuery = buildMailLabelQuery()
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${mailTimestamp.length ? `and (${mailTimestamp})` : ""}
-        and permissions contains @email
-        ${mailLabelQuery}
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-
-    const buildDefaultYQL = () => {
-      const appOrEntityFilter = buildAppEntityFilter()
-      const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      return ` 
-  (
-      (
-            ({targetHits:${hits}} userInput(@query))
-            or
-            ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-      )
-      and (permissions contains @email or owner contains @email)
-      ${timestamp.length ? `and (${timestamp})` : ""}
-      ${appOrEntityFilter}
-      ${intentFilter}
-  )
-  `
-    }
-
-    const buildGoogleDriveYQL = () => {
-      const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      const appOrEntityFilter = buildAppEntityFilter()
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${fileTimestamp.length ? `and (${fileTimestamp})` : ""}
-        and permissions contains @email
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-
-    const buildGoogleCalendarYQL = () => {
-      const eventTimestamp = buildTimestampConditions("startTime", "startTime")
-      const appOrEntityFilter = buildAppEntityFilter()
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${eventTimestamp.length ? `and (${eventTimestamp})` : ""}
-        and permissions contains @email
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-
-    const buildSlackYQL = () => {
-      const appOrEntityFilter = buildAppEntityFilter()
-      const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        ${timestamp.length ? `and (${timestamp})` : ""}
-        ${appOrEntityFilter}
-        and permissions contains @email
-      )`
-    }
-
-    // Start with AllSources and filter out excluded app schemas
-    let newSources = this.getSchemaSources()
     if (excludedApps && excludedApps.length > 0) {
-      let sourcesToExclude: string[] = []
+      const sourcesToExclude: string[] = []
 
       excludedApps.forEach((excludedApp) => {
         switch (excludedApp) {
@@ -505,62 +392,445 @@ export class VespaService {
             break
         }
       })
-      newSources = newSources
-        .split(", ")
-        .filter((source) => !sourcesToExclude.includes(source))
-        .join(", ")
+
+      sources = sources.filter((source) => !sourcesToExclude.includes(source))
     }
 
-    // Start with all apps and filter out excluded ones
-    const allApps = Object.values(Apps)
-    const includedApps = allApps.filter(
-      (appItem) => !excludedApps?.includes(appItem),
-    )
+    return sources
+  }
 
-    // Build app-specific queries for included apps
-    const appQueries: string[] = []
+  /**
+   * Get list of apps to include in search (all apps minus excluded ones)
+   */
+  private getIncludedApps(excludedApps?: Apps[]): Apps[] {
+    const allApps = Object.values(Apps)
+    return allApps.filter((appItem) => !excludedApps?.includes(appItem))
+  }
+
+  /**
+   * Build app-specific YQL conditions for each included app
+   */
+  private buildAppSpecificQueries(
+    includedApps: Apps[],
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    notInMailLabels?: string[],
+    intent?: Intent | null
+  ) {
+    const appConditions = []
 
     for (const includedApp of includedApps) {
+      let appCondition = null
+
       switch (includedApp) {
         case Apps.GoogleWorkspace:
-          appQueries.push(buildGoogleWorkspaceYQL())
+          appCondition = this.buildGoogleWorkspaceCondition(hits, app, entity, timestampRange, intent)
           break
         case Apps.Gmail:
-          appQueries.push(buildGmailYQL())
+          appCondition = this.buildGmailCondition(hits, app, entity, timestampRange, notInMailLabels, intent)
           break
         case Apps.GoogleDrive:
-          appQueries.push(buildGoogleDriveYQL())
+          appCondition = this.buildGoogleDriveCondition(hits, app, entity, timestampRange, intent)
           break
         case Apps.GoogleCalendar:
-          appQueries.push(buildGoogleCalendarYQL())
+          appCondition = this.buildGoogleCalendarCondition(hits, app, entity, timestampRange, intent)
           break
         case Apps.Slack:
-          appQueries.push(buildSlackYQL())
+          appCondition = this.buildSlackCondition(hits, app, entity, timestampRange)
           break
         case Apps.DataSource:
+          // Skip DataSource for now as it's handled differently
           break
         default:
-          appQueries.push(buildDefaultYQL())
+          appCondition = this.buildDefaultCondition(hits, app, entity, timestampRange, intent)
           break
+      }
+
+      if (appCondition) {
+        appConditions.push(appCondition)
       }
     }
 
-    // Combine all queries
-    const combinedQuery = appQueries.join("\nor\n")
-    const exclusionCondition = buildExclusionCondition()
+    return appConditions
+  }
 
-    return {
-      profile: profile,
-      yql: `
-    select * from sources ${newSources}
-        where (
-          (
-            ${combinedQuery}
-          )
-          ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
-        )
-    `,
+  /**
+   * Build Google Workspace specific condition
+   */
+  private buildGoogleWorkspaceCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    intent?: Intent | null
+  ) {
+    const permissionBasedConditions = []
+
+    permissionBasedConditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      permissionBasedConditions.push(new TimestampCondition('creationTime', 'creationTime', timestampRange))
     }
+
+    const hasAppOrEntity = !!(app || entity)
+    if (!hasAppOrEntity) {
+      permissionBasedConditions.push(VespaField.contains('app', Apps.GoogleWorkspace))
+    } else {
+      if (Array.isArray(app) && app.length > 0) {
+        const appConditions = app.map(a => VespaField.contains('app', a))
+        permissionBasedConditions.push(new OrCondition(appConditions).parenthesize())
+      } else if (app && !Array.isArray(app)) {
+        permissionBasedConditions.push(VespaField.contains('app', app))
+      }
+
+      if (Array.isArray(entity) && entity.length > 0) {
+        const entityConditions = entity.map(e => VespaField.contains('entity', e))
+        permissionBasedConditions.push(new OrCondition(entityConditions).parenthesize())
+      } else if (entity && !Array.isArray(entity)) {
+        permissionBasedConditions.push(VespaField.contains('entity', entity))
+      }
+
+      permissionBasedConditions.push(PermissionCondition.EmailPermissions('@email'))
+    }
+
+    if (intent) {
+      const intentCondition = this.buildIntentConditionFromIntent(intent)
+      if (intentCondition) {
+        permissionBasedConditions.push(intentCondition)
+      }
+    }
+
+    const permissionBasedQuery = new AndCondition(permissionBasedConditions).parenthesize()
+
+    const ownershipBasedConditions = []
+
+    ownershipBasedConditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    ownershipBasedConditions.push(PermissionCondition.EmailOwner('@email'))
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      ownershipBasedConditions.push(new TimestampCondition('creationTime', 'creationTime', timestampRange))
+    }
+
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map(a => VespaField.contains('app', a))
+      ownershipBasedConditions.push(new OrCondition(appConditions).parenthesize())
+    } else if (app && !Array.isArray(app)) {
+      ownershipBasedConditions.push(VespaField.contains('app', app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      ownershipBasedConditions.push(new OrCondition(entityConditions).parenthesize())
+    } else if (entity && !Array.isArray(entity)) {
+      ownershipBasedConditions.push(VespaField.contains('entity', entity))
+    }
+
+    const ownershipBasedQuery = new AndCondition(ownershipBasedConditions).parenthesize()
+
+    return new OrCondition([permissionBasedQuery, ownershipBasedQuery])
+  }
+
+  /**
+   * Build Gmail specific condition
+   */
+  private buildGmailCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    notInMailLabels?: string[],
+    intent?: Intent | null
+  ) {
+    const conditions = []
+
+    // Add hybrid search
+    conditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(new TimestampCondition('timestamp', 'timestamp', timestampRange))
+    }
+
+    conditions.push(PermissionCondition.EmailPermissions('@email'))
+
+    // mail label exclusions
+    if (notInMailLabels && notInMailLabels.length > 0) {
+      const labelConditions = notInMailLabels
+        .filter(label => label && label.trim())
+        .map(label => VespaField.contains('labels', label.trim()))
+
+      if (labelConditions.length > 0) {
+        const combinedLabels = labelConditions.length === 1
+          ? labelConditions[0]!
+          : new OrCondition(labelConditions).parenthesize()
+
+        conditions.push(combinedLabels.not())
+      }
+    }
+
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map(a => VespaField.contains('app', a))
+      conditions.push(new OrCondition(appConditions).parenthesize())
+    } else if (app && !Array.isArray(app)) {
+      conditions.push(VespaField.contains('app', app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      conditions.push(new OrCondition(entityConditions).parenthesize())
+    } else if (entity && !Array.isArray(entity)) {
+      conditions.push(VespaField.contains('entity', entity))
+    }
+
+    // Add intent filter
+    if (intent) {
+      const intentCondition = this.buildIntentConditionFromIntent(intent)
+      if (intentCondition) {
+        conditions.push(intentCondition)
+      }
+    }
+
+    return new AndCondition(conditions).parenthesize()
+  }
+
+  /**
+   * Build Google Drive specific condition
+   */
+  private buildGoogleDriveCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    intent?: Intent | null
+  ) {
+    const conditions = []
+
+    // Add hybrid search
+    conditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    // Add timestamp conditions
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
+    }
+
+    // Add permissions check
+    conditions.push(PermissionCondition.EmailPermissions('@email'))
+
+    // Add app/entity filters
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map(a => VespaField.contains('app', a))
+      conditions.push(new OrCondition(appConditions).parenthesize())
+    } else if (app && !Array.isArray(app)) {
+      conditions.push(VespaField.contains('app', app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      conditions.push(new OrCondition(entityConditions).parenthesize())
+    } else if (entity && !Array.isArray(entity)) {
+      conditions.push(VespaField.contains('entity', entity))
+    }
+
+    // Add intent filter
+    if (intent) {
+      const intentCondition = this.buildIntentConditionFromIntent(intent)
+      if (intentCondition) {
+        conditions.push(intentCondition)
+      }
+    }
+
+    return new AndCondition(conditions).parenthesize()
+  }
+
+  /**
+   * Build Google Calendar specific condition
+   */
+  private buildGoogleCalendarCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    intent?: Intent | null
+  ) {
+    const conditions = []
+
+    // Add hybrid search
+    conditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    // Add timestamp conditions
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(new TimestampCondition('startTime', 'startTime', timestampRange))
+    }
+
+    // Add permissions check
+    conditions.push(PermissionCondition.EmailPermissions('@email'))
+
+    // Add app/entity filters
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map(a => VespaField.contains('app', a))
+      conditions.push(new OrCondition(appConditions).parenthesize())
+    } else if (app && !Array.isArray(app)) {
+      conditions.push(VespaField.contains('app', app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      conditions.push(new OrCondition(entityConditions).parenthesize())
+    } else if (entity && !Array.isArray(entity)) {
+      conditions.push(VespaField.contains('entity', entity))
+    }
+
+    // Add intent filter
+    if (intent) {
+      const intentCondition = this.buildIntentConditionFromIntent(intent)
+      if (intentCondition) {
+        conditions.push(intentCondition)
+      }
+    }
+
+    return new AndCondition(conditions).parenthesize()
+  }
+
+  /**
+   * Build Slack specific condition
+   */
+  private buildSlackCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null
+  ) {
+    const conditions = []
+
+    // Add hybrid search with text_embeddings for Slack
+    conditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('text_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    // Add timestamp conditions
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
+    }
+
+    // Add app/entity filters
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map(a => VespaField.contains('app', a))
+      conditions.push(new OrCondition(appConditions).parenthesize())
+    } else if (app && !Array.isArray(app)) {
+      conditions.push(VespaField.contains('app', app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      conditions.push(new OrCondition(entityConditions).parenthesize())
+    } else if (entity && !Array.isArray(entity)) {
+      conditions.push(VespaField.contains('entity', entity))
+    }
+
+    // Add permissions check
+    conditions.push(PermissionCondition.EmailPermissions('@email'))
+
+    return new AndCondition(conditions).parenthesize()
+  }
+
+  /**
+   * Build default condition for other apps
+   */
+  private buildDefaultCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    intent?: Intent | null
+  ) {
+    const conditions = []
+
+    // Add hybrid search
+    conditions.push(new OrCondition([
+      new UserInputCondition('@query', hits),
+      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
+    ]).parenthesize())
+
+    // Add permissions or owner check
+    const permissionCondition = PermissionCondition.EmailPermissions('@email')
+    conditions.push(permissionCondition)
+
+    // Add timestamp conditions
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
+    }
+
+    // Add app/entity filters
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map(a => VespaField.contains('app', a))
+      conditions.push(new OrCondition(appConditions).parenthesize())
+    } else if (app && !Array.isArray(app)) {
+      conditions.push(VespaField.contains('app', app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      conditions.push(new OrCondition(entityConditions).parenthesize())
+    } else if (entity && !Array.isArray(entity)) {
+      conditions.push(VespaField.contains('entity', entity))
+    }
+
+    // Add intent filter
+    if (intent) {
+      const intentCondition = this.buildIntentConditionFromIntent(intent)
+      if (intentCondition) {
+        conditions.push(intentCondition)
+      }
+    }
+
+    return new AndCondition(conditions).parenthesize()
+  }
+
+  /**
+   * Convert Intent object to YQL condition
+   */
+  private buildIntentConditionFromIntent(intent: Intent) {
+    const intentConditions = []
+
+    if (intent.from && intent.from.length > 0) {
+      const fromConditions = intent.from.map(from => VespaField.contains('from', from))
+      intentConditions.push(fromConditions.length === 1 ? fromConditions[0]! : new OrCondition(fromConditions))
+    }
+
+    if (intent.to && intent.to.length > 0) {
+      const toConditions = intent.to.map(to => VespaField.contains('to', to))
+      intentConditions.push(toConditions.length === 1 ? toConditions[0]! : new OrCondition(toConditions))
+    }
+
+    if (intent.cc && intent.cc.length > 0) {
+      const ccConditions = intent.cc.map(cc => VespaField.contains('cc', cc))
+      intentConditions.push(ccConditions.length === 1 ? ccConditions[0]! : new OrCondition(ccConditions))
+    }
+
+    if (intent.bcc && intent.bcc.length > 0) {
+      const bccConditions = intent.bcc.map(bcc => VespaField.contains('bcc', bcc))
+      intentConditions.push(bccConditions.length === 1 ? bccConditions[0]! : new OrCondition(bccConditions))
+    }
+
+    return intentConditions.length > 0 ? new AndCondition(intentConditions) : null
   }
   // Helper function to build intent filter
   buildIntentFilter = (intent: Intent | null) => {
@@ -634,10 +904,10 @@ export class VespaService {
     // Helper function to build app/entity filter
     const buildAppEntityFilter = () => {
       return `${app
-          ? (Array.isArray(app) && app.length > 0)
-            ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-            : "and app contains @app"
-          : ""
+        ? (Array.isArray(app) && app.length > 0)
+          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
+          : "and app contains @app"
+        : ""
         } ${entity
           ? Array.isArray(entity) && entity.length > 0
             ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
@@ -1283,12 +1553,12 @@ export class VespaService {
     email: string,
     limit = this.config.page,
     isSlackConnected: boolean,
-    isGmailConnected:boolean,
-    isCalendarConnected:boolean,
-    isDriveConnected:boolean,
+    isGmailConnected: boolean,
+    isCalendarConnected: boolean,
+    isDriveConnected: boolean,
     timestampRange?: { to: number; from: number } | null,
   ): Promise<AppEntityCounts> => {
-    return await this._groupVespaSearch(query, email, limit, timestampRange, isSlackConnected,isGmailConnected,isCalendarConnected,isDriveConnected)
+    return await this._groupVespaSearch(query, email, limit, timestampRange, isSlackConnected, isGmailConnected, isCalendarConnected, isDriveConnected)
   }
   async _groupVespaSearch(
     query: string,
@@ -1303,13 +1573,13 @@ export class VespaService {
     let excludedApps: Apps[] = []
     try {
 
-      if(!isDriveConnected){
+      if (!isDriveConnected) {
         excludedApps.push(Apps.GoogleDrive)
       }
-      if(!isCalendarConnected){
+      if (!isCalendarConnected) {
         excludedApps.push(Apps.GoogleCalendar)
       }
-      if(!isGmailConnected){
+      if (!isGmailConnected) {
         excludedApps.push(Apps.Gmail)
       }
       if (!isSlackConnected) {
@@ -1427,19 +1697,19 @@ export class VespaService {
     // Check if Slack sync job exists for the user (only for local vespa)
     let excludedApps: Apps[] = []
     try {
-      if(!isDriveConnected){
+      if (!isDriveConnected) {
         excludedApps.push(Apps.GoogleDrive)
       }
-      if(!isCalendarConnected){
+      if (!isCalendarConnected) {
         excludedApps.push(Apps.GoogleCalendar)
       }
-      if(!isGmailConnected){
+      if (!isGmailConnected) {
         excludedApps.push(Apps.Gmail)
       }
       if (!isSlackConnected) {
         excludedApps.push(Apps.Slack)
       }
-      
+
     } catch (error) {
       // If no Slack connector is found, this is normal - exclude Slack from search
       // Only log as debug since this is expected behavior for users without Slack
@@ -1448,7 +1718,7 @@ export class VespaService {
       )
       excludedApps.push(Apps.Slack)
     }
-    
+
     let { yql, profile } = this.HybridDefaultProfile(
       limit,
       app,
