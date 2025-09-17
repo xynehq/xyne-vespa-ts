@@ -244,12 +244,14 @@ export const VespaSearchResponseToSearchResult = (
             // matchfeatures is already part of fields (if returned by Vespa)
             // creating a new property
             // Ensure chunks_summary processing happens before parsing
-            fields.chunks_summary = fields.description && textChunker
-              ? textChunker.chunkDocument(fields.description)
-                  .map((v) => v.chunk)
-                  .sort((a, b) => countHiTags(b) - countHiTags(a))
-                  .slice(0, maxSearchChunks)
-              : []
+            fields.chunks_summary =
+              fields.description && textChunker
+                ? textChunker
+                    .chunkDocument(fields.description)
+                    .map((v) => v.chunk)
+                    .sort((a, b) => countHiTags(b) - countHiTags(a))
+                    .slice(0, maxSearchChunks)
+                : []
             // This line seems redundant as it's assigned above? Keeping it for now.
             fields.chunks_summary = fields.chunks_summary?.slice(
               0,
