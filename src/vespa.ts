@@ -21,7 +21,7 @@ import {
   SlackEntity,
   chatContainerSchema,
   KbItemsSchema,
-} from "./types";
+} from "./types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -43,42 +43,48 @@ import type {
   VespaQueryConfig,
   GetItemsParams,
   GetThreadItemsParams,
-} from "./types";
-import { SearchModes } from "./types";
-import { dateToUnixTimestamp, escapeYqlValue, formatYqlToReadable, getErrorMessage, processGmailIntent } from "./utils";
-import { TimestampCondition } from "./yql/conditions";
-import { YqlBuilder } from "./yql/yqlBuilder";
+} from "./types"
+import { SearchModes } from "./types"
+import {
+  dateToUnixTimestamp,
+  escapeYqlValue,
+  formatYqlToReadable,
+  getErrorMessage,
+  processGmailIntent,
+} from "./utils"
+import { TimestampCondition } from "./yql/conditions"
+import { YqlBuilder } from "./yql/yqlBuilder"
 import {
   OrCondition,
   AndCondition,
   UserInputCondition,
   NearestNeighborCondition,
-  VespaField
-} from "./yql/conditions";
-import { PermissionCondition } from "./yql/permissions";
+  VespaField,
+} from "./yql/conditions"
+import { PermissionCondition } from "./yql/permissions"
 import {
   ErrorDeletingDocuments,
   ErrorRetrievingDocuments,
   ErrorPerformingSearch,
   ErrorInsertingDocument,
-} from "./errors";
-import crypto from "crypto";
-import VespaClient from "./client/vespaClient";
-import pLimit from "p-limit";
-import type { ILogger, VespaConfig, VespaDependencies } from "./types";
-import { is } from "zod/locales";
+} from "./errors"
+import crypto from "crypto"
+import VespaClient from "./client/vespaClient"
+import pLimit from "p-limit"
+import type { ILogger, VespaConfig, VespaDependencies } from "./types"
+import { is } from "zod/locales"
 
 type YqlProfile = {
-  profile: SearchModes;
-  yql: string;
-};
+  profile: SearchModes
+  yql: string
+}
 
 interface EntityCounts {
-  [entity: string]: number;
+  [entity: string]: number
 }
 
 export interface AppEntityCounts {
-  [app: string]: EntityCounts;
+  [app: string]: EntityCounts
 }
 
 const AllSources = [
@@ -96,22 +102,22 @@ const AllSources = [
 ]
 
 export class VespaService {
-  private logger: ILogger;
-  private config: VespaConfig;
-  private vespa: VespaClient;
-  private schemaSources: string[];
-  private vespaEndpoint: string;
+  private logger: ILogger
+  private config: VespaConfig
+  private vespa: VespaClient
+  private schemaSources: string[]
+  private vespaEndpoint: string
   constructor(dependencies: VespaDependencies) {
-    this.logger = dependencies.logger.child({ module: "vespa" });
-    this.config = dependencies.config;
-    this.schemaSources = dependencies.sourceSchemas || AllSources;
+    this.logger = dependencies.logger.child({ module: "vespa" })
+    this.config = dependencies.config
+    this.schemaSources = dependencies.sourceSchemas || AllSources
     this.vespaEndpoint = dependencies.vespaEndpoint
     // Initialize Vespa clients
-    this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config);
+    this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config)
   }
 
   getSchemaSources(): string {
-    return this.schemaSources.join(", ");
+    return this.schemaSources.join(", ")
   }
   /**
    * Deletes all documents from the specified schema and namespace in Vespa.
@@ -157,7 +163,10 @@ export class VespaService {
     let lastError: any
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        await this.vespa.insert(document, { namespace: this.config.namespace, schema })
+        await this.vespa.insert(document, {
+          namespace: this.config.namespace,
+          schema,
+        })
         this.logger.debug(`Inserted document ${document.docId}`)
         return
       } catch (error) {
@@ -199,7 +208,10 @@ export class VespaService {
 
   insertUser = async (user: VespaUser) => {
     return this.vespa
-      .insertUser(user, { namespace: this.config.namespace, schema: userSchema })
+      .insertUser(user, {
+        namespace: this.config.namespace,
+        schema: userSchema,
+      })
       .catch((error) => {
         this.logger.error(`Inserting user failed with error:`, error)
         throw new ErrorInsertingDocument({
@@ -238,7 +250,8 @@ export class VespaService {
     email: string,
     limit: number = 5,
   ): Promise<VespaAutocompleteResponse> => {
-    const sources = this.getSchemaSources().split(", ")
+    const sources = this.getSchemaSources()
+      .split(", ")
       .filter((s) => s !== chatMessageSchema)
       .join(", ")
 
@@ -294,18 +307,16 @@ export class VespaService {
       timeout: "5s",
     }
 
-    return this.vespa
-      .autoComplete(searchPayload)
-      .catch((error) => {
-        this.logger.error(`Autocomplete failed with error:`, error)
-        throw new ErrorPerformingSearch({
-          message: `Error performing autocomplete search`,
-          cause: error as Error,
-          sources: "file",
-        })
-        // TODO: instead of null just send empty response
-        throw error
+    return this.vespa.autoComplete(searchPayload).catch((error) => {
+      this.logger.error(`Autocomplete failed with error:`, error)
+      throw new ErrorPerformingSearch({
+        message: `Error performing autocomplete search`,
+        cause: error as Error,
+        sources: "file",
       })
+      // TODO: instead of null just send empty response
+      throw error
+    })
   }
 
   handleAppsNotInYql = (app: Apps | null, includedApp: Apps[]) => {
@@ -338,10 +349,10 @@ export class VespaService {
         entity,
         timestampRange,
         notInMailLabels,
-        intent
+        intent,
       )
 
-      const yqlBuilder = YqlBuilder.create('@email', {
+      const yqlBuilder = YqlBuilder.create("@email", {
         sources: availableSources,
         targetHits: hits,
       })
@@ -357,13 +368,11 @@ export class VespaService {
       }
 
       return yqlBuilder.buildProfile(profile)
-
     } catch (error) {
       this.logger.error(`Failed to build YQL profile:`, error)
       throw new Error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
     }
   }
-
 
   private getAvailableSources(excludedApps?: Apps[]): string[] {
     let sources = this.getSchemaSources().split(", ")
@@ -397,7 +406,6 @@ export class VespaService {
     return sources
   }
 
-
   private getIncludedApps(excludedApps?: Apps[]): Apps[] {
     const allApps = Object.values(Apps)
     return allApps.filter((appItem) => !excludedApps?.includes(appItem))
@@ -410,7 +418,7 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     notInMailLabels?: string[],
-    intent?: Intent | null
+    intent?: Intent | null,
   ) {
     const appConditions = []
 
@@ -419,25 +427,61 @@ export class VespaService {
 
       switch (includedApp) {
         case Apps.GoogleWorkspace:
-          appCondition = this.buildGoogleWorkspaceCondition(hits, app, entity, timestampRange, intent)
+          appCondition = this.buildGoogleWorkspaceCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            intent,
+          )
           break
         case Apps.Gmail:
-          appCondition = this.buildGmailCondition(hits, app, entity, timestampRange, notInMailLabels, intent)
+          appCondition = this.buildGmailCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            notInMailLabels,
+            intent,
+          )
           break
         case Apps.GoogleDrive:
-          appCondition = this.buildGoogleDriveCondition(hits, app, entity, timestampRange, intent)
+          appCondition = this.buildGoogleDriveCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            intent,
+          )
           break
         case Apps.GoogleCalendar:
-          appCondition = this.buildGoogleCalendarCondition(hits, app, entity, timestampRange, intent)
+          appCondition = this.buildGoogleCalendarCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            intent,
+          )
           break
         case Apps.Slack:
-          appCondition = this.buildSlackCondition(hits, app, entity, timestampRange)
+          appCondition = this.buildSlackCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+          )
           break
         case Apps.DataSource:
           // Skip DataSource for now as it's handled differently
           break
         default:
-          appCondition = this.buildDefaultCondition(hits, app, entity, timestampRange, intent)
+          appCondition = this.buildDefaultCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            intent,
+          )
           break
       }
 
@@ -454,39 +498,48 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null
+    intent?: Intent | null,
   ) {
     const permissionBasedConditions = []
 
-    permissionBasedConditions.push(new OrCondition([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
-    ]).parenthesize())
+    permissionBasedConditions.push(
+      new OrCondition([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("chunk_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       permissionBasedConditions.push(
-        new TimestampCondition('creationTime', 'creationTime', timestampRange)
+        new TimestampCondition("creationTime", "creationTime", timestampRange),
       )
     }
 
     const hasAppOrEntity = !!(app || entity)
     if (!hasAppOrEntity) {
-      permissionBasedConditions.push(VespaField.contains('app', Apps.GoogleWorkspace))
+      permissionBasedConditions.push(
+        VespaField.contains("app", Apps.GoogleWorkspace),
+      )
     } else {
       if (Array.isArray(app) && app.length > 0) {
-        const appConditions = app.map(a => VespaField.contains('app', a))
-        permissionBasedConditions.push(new OrCondition(appConditions).parenthesize())
+        const appConditions = app.map((a) => VespaField.contains("app", a))
+        permissionBasedConditions.push(
+          new OrCondition(appConditions).parenthesize(),
+        )
       } else if (app && !Array.isArray(app)) {
-        permissionBasedConditions.push(VespaField.contains('app', app))
+        permissionBasedConditions.push(VespaField.contains("app", app))
       }
 
       if (Array.isArray(entity) && entity.length > 0) {
-        const entityConditions = entity.map(e => VespaField.contains('entity', e))
-        permissionBasedConditions.push(new OrCondition(entityConditions).parenthesize())
+        const entityConditions = entity.map((e) =>
+          VespaField.contains("entity", e),
+        )
+        permissionBasedConditions.push(
+          new OrCondition(entityConditions).parenthesize(),
+        )
       } else if (entity && !Array.isArray(entity)) {
-        permissionBasedConditions.push(VespaField.contains('entity', entity))
+        permissionBasedConditions.push(VespaField.contains("entity", entity))
       }
-
     }
 
     if (intent) {
@@ -496,36 +549,53 @@ export class VespaService {
       }
     }
 
-    const permissionBasedQuery = new AndCondition(permissionBasedConditions).parenthesize()
+    const permissionBasedQuery = new AndCondition(
+      permissionBasedConditions,
+    ).parenthesize()
 
     const ownershipBasedConditions = []
 
-    ownershipBasedConditions.push(OrCondition.withOwnerPermissions([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
-    ]).parenthesize())
+    ownershipBasedConditions.push(
+      OrCondition.withOwnerPermissions([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("chunk_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      ownershipBasedConditions.push(new TimestampCondition('creationTime', 'creationTime', timestampRange))
+      ownershipBasedConditions.push(
+        new TimestampCondition("creationTime", "creationTime", timestampRange),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map(a => VespaField.contains('app', a))
-      ownershipBasedConditions.push(OrCondition.withOwnerPermissions(appConditions).parenthesize())
+      const appConditions = app.map((a) => VespaField.contains("app", a))
+      ownershipBasedConditions.push(
+        OrCondition.withOwnerPermissions(appConditions).parenthesize(),
+      )
     } else if (app && !Array.isArray(app)) {
-      ownershipBasedConditions.push(VespaField.contains('app', app))
+      ownershipBasedConditions.push(VespaField.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map(e => VespaField.contains('entity', e))
-      ownershipBasedConditions.push(OrCondition.withOwnerPermissions(entityConditions).parenthesize())
+      const entityConditions = entity.map((e) =>
+        VespaField.contains("entity", e),
+      )
+      ownershipBasedConditions.push(
+        OrCondition.withOwnerPermissions(entityConditions).parenthesize(),
+      )
     } else if (entity && !Array.isArray(entity)) {
-      ownershipBasedConditions.push(VespaField.contains('entity', entity))
+      ownershipBasedConditions.push(VespaField.contains("entity", entity))
     }
 
-    const ownershipBasedQuery = new AndCondition(ownershipBasedConditions).parenthesize()
+    const ownershipBasedQuery = new AndCondition(
+      ownershipBasedConditions,
+    ).parenthesize()
 
-    return OrCondition.withoutPermissions([permissionBasedQuery, ownershipBasedQuery])
+    return OrCondition.withoutPermissions([
+      permissionBasedQuery,
+      ownershipBasedQuery,
+    ])
   }
 
   private buildGmailCondition(
@@ -534,45 +604,52 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     notInMailLabels?: string[],
-    intent?: Intent | null
+    intent?: Intent | null,
   ) {
     const conditions = []
 
-    conditions.push(new OrCondition([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
-    ]).parenthesize())
+    conditions.push(
+      new OrCondition([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("chunk_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new TimestampCondition('timestamp', 'timestamp', timestampRange))
+      conditions.push(
+        new TimestampCondition("timestamp", "timestamp", timestampRange),
+      )
     }
 
     if (notInMailLabels && notInMailLabels.length > 0) {
       const labelConditions = notInMailLabels
-        .filter(label => label && label.trim())
-        .map(label => VespaField.contains('labels', label.trim()))
+        .filter((label) => label && label.trim())
+        .map((label) => VespaField.contains("labels", label.trim()))
 
       if (labelConditions.length > 0) {
-        const combinedLabels = labelConditions.length === 1
-          ? labelConditions[0]!
-          : new OrCondition(labelConditions).parenthesize()
+        const combinedLabels =
+          labelConditions.length === 1
+            ? labelConditions[0]!
+            : new OrCondition(labelConditions).parenthesize()
 
         conditions.push(combinedLabels.not())
       }
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map(a => VespaField.contains('app', a))
+      const appConditions = app.map((a) => VespaField.contains("app", a))
       conditions.push(new OrCondition(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains('app', app))
+      conditions.push(VespaField.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      const entityConditions = entity.map((e) =>
+        VespaField.contains("entity", e),
+      )
       conditions.push(new OrCondition(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains('entity', entity))
+      conditions.push(VespaField.contains("entity", entity))
     }
 
     if (intent) {
@@ -590,31 +667,37 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null
+    intent?: Intent | null,
   ) {
     const conditions = []
 
-    conditions.push(new OrCondition([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
-    ]).parenthesize())
+    conditions.push(
+      new OrCondition([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("chunk_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
+      conditions.push(
+        new TimestampCondition("updatedAt", "updatedAt", timestampRange),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map(a => VespaField.contains('app', a))
+      const appConditions = app.map((a) => VespaField.contains("app", a))
       conditions.push(new OrCondition(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains('app', app))
+      conditions.push(VespaField.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      const entityConditions = entity.map((e) =>
+        VespaField.contains("entity", e),
+      )
       conditions.push(new OrCondition(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains('entity', entity))
+      conditions.push(VespaField.contains("entity", entity))
     }
 
     if (intent) {
@@ -632,31 +715,37 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null
+    intent?: Intent | null,
   ) {
     const conditions = []
 
-    conditions.push(new OrCondition([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
-    ]).parenthesize())
+    conditions.push(
+      new OrCondition([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("chunk_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new TimestampCondition('startTime', 'startTime', timestampRange))
+      conditions.push(
+        new TimestampCondition("startTime", "startTime", timestampRange),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map(a => VespaField.contains('app', a))
+      const appConditions = app.map((a) => VespaField.contains("app", a))
       conditions.push(new OrCondition(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains('app', app))
+      conditions.push(VespaField.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      const entityConditions = entity.map((e) =>
+        VespaField.contains("entity", e),
+      )
       conditions.push(new OrCondition(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains('entity', entity))
+      conditions.push(VespaField.contains("entity", entity))
     }
 
     if (intent) {
@@ -673,31 +762,37 @@ export class VespaService {
     hits: number,
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
-    timestampRange?: { to: number | null; from: number | null } | null
+    timestampRange?: { to: number | null; from: number | null } | null,
   ) {
     const conditions = []
 
-    conditions.push(new OrCondition([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('text_embeddings', 'e', hits)
-    ]).parenthesize())
+    conditions.push(
+      new OrCondition([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("text_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
+      conditions.push(
+        new TimestampCondition("updatedAt", "updatedAt", timestampRange),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map(a => VespaField.contains('app', a))
+      const appConditions = app.map((a) => VespaField.contains("app", a))
       conditions.push(new OrCondition(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains('app', app))
+      conditions.push(VespaField.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      const entityConditions = entity.map((e) =>
+        VespaField.contains("entity", e),
+      )
       conditions.push(new OrCondition(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains('entity', entity))
+      conditions.push(VespaField.contains("entity", entity))
     }
 
     return new AndCondition(conditions).parenthesize()
@@ -708,31 +803,37 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null
+    intent?: Intent | null,
   ) {
     const conditions = []
 
-    conditions.push(new OrCondition([
-      new UserInputCondition('@query', hits),
-      new NearestNeighborCondition('chunk_embeddings', 'e', hits)
-    ]).parenthesize())
+    conditions.push(
+      new OrCondition([
+        new UserInputCondition("@query", hits),
+        new NearestNeighborCondition("chunk_embeddings", "e", hits),
+      ]).parenthesize(),
+    )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new TimestampCondition('updatedAt', 'updatedAt', timestampRange))
+      conditions.push(
+        new TimestampCondition("updatedAt", "updatedAt", timestampRange),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map(a => VespaField.contains('app', a))
+      const appConditions = app.map((a) => VespaField.contains("app", a))
       conditions.push(new OrCondition(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains('app', app))
+      conditions.push(VespaField.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map(e => VespaField.contains('entity', e))
+      const entityConditions = entity.map((e) =>
+        VespaField.contains("entity", e),
+      )
       conditions.push(new OrCondition(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains('entity', entity))
+      conditions.push(VespaField.contains("entity", entity))
     }
 
     if (intent) {
@@ -745,31 +846,52 @@ export class VespaService {
     return new AndCondition(conditions).parenthesize()
   }
 
-
   private buildIntentConditionFromIntent(intent: Intent) {
     const intentConditions = []
 
     if (intent.from && intent.from.length > 0) {
-      const fromConditions = intent.from.map(from => VespaField.contains('from', from))
-      intentConditions.push(fromConditions.length === 1 ? fromConditions[0]! : new OrCondition(fromConditions))
+      const fromConditions = intent.from.map((from) =>
+        VespaField.contains("from", from),
+      )
+      intentConditions.push(
+        fromConditions.length === 1
+          ? fromConditions[0]!
+          : new OrCondition(fromConditions),
+      )
     }
 
     if (intent.to && intent.to.length > 0) {
-      const toConditions = intent.to.map(to => VespaField.contains('to', to))
-      intentConditions.push(toConditions.length === 1 ? toConditions[0]! : new OrCondition(toConditions))
+      const toConditions = intent.to.map((to) => VespaField.contains("to", to))
+      intentConditions.push(
+        toConditions.length === 1
+          ? toConditions[0]!
+          : new OrCondition(toConditions),
+      )
     }
 
     if (intent.cc && intent.cc.length > 0) {
-      const ccConditions = intent.cc.map(cc => VespaField.contains('cc', cc))
-      intentConditions.push(ccConditions.length === 1 ? ccConditions[0]! : new OrCondition(ccConditions))
+      const ccConditions = intent.cc.map((cc) => VespaField.contains("cc", cc))
+      intentConditions.push(
+        ccConditions.length === 1
+          ? ccConditions[0]!
+          : new OrCondition(ccConditions),
+      )
     }
 
     if (intent.bcc && intent.bcc.length > 0) {
-      const bccConditions = intent.bcc.map(bcc => VespaField.contains('bcc', bcc))
-      intentConditions.push(bccConditions.length === 1 ? bccConditions[0]! : new OrCondition(bccConditions))
+      const bccConditions = intent.bcc.map((bcc) =>
+        VespaField.contains("bcc", bcc),
+      )
+      intentConditions.push(
+        bccConditions.length === 1
+          ? bccConditions[0]!
+          : new OrCondition(bccConditions),
+      )
     }
 
-    return intentConditions.length > 0 ? new AndCondition(intentConditions) : null
+    return intentConditions.length > 0
+      ? new AndCondition(intentConditions)
+      : null
   }
   // Helper function to build intent filter
   buildIntentFilter = (intent: Intent | null) => {
@@ -842,17 +964,19 @@ export class VespaService {
 
     // Helper function to build app/entity filter
     const buildAppEntityFilter = () => {
-      return `${app
-        ? (Array.isArray(app) && app.length > 0)
-          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-          : "and app contains @app"
-        : ""
-        } ${entity
+      return `${
+        app
+          ? (Array.isArray(app) && app.length > 0)
+            ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
+            : "and app contains @app"
+          : ""
+      } ${
+        entity
           ? Array.isArray(entity) && entity.length > 0
             ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
             : "and entity contains @entity"
           : ""
-        }`.trim()
+      }`.trim()
     }
     // Helper function to build exclusion condition
     const buildExclusionCondition = () => {
@@ -877,9 +1001,10 @@ export class VespaService {
       (
         ({targetHits:${hits}} userInput(@query))
         ${timestampRange ? `and (${userTimestamp})` : ""}
-        ${!hasAppOrEntity
-          ? `and app contains "${Apps.GoogleWorkspace}"`
-          : `${appOrEntityFilter} and permissions contains @email`
+        ${
+          !hasAppOrEntity
+            ? `and app contains "${Apps.GoogleWorkspace}"`
+            : `${appOrEntityFilter} and permissions contains @email`
         }
       )
       or
@@ -959,7 +1084,10 @@ export class VespaService {
       let channelIds: string[] = []
       const intentFilter = this.buildIntentFilter(intent)
       channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
-      const channelIdConditions = buildDocsInclusionCondition("docId", channelIds)
+      const channelIdConditions = buildDocsInclusionCondition(
+        "docId",
+        channelIds,
+      )
 
       return `
       (
@@ -1017,7 +1145,6 @@ export class VespaService {
         const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(folderCondition)
       }
-
 
       return conditions
     }
@@ -1077,9 +1204,11 @@ export class VespaService {
             if (collectionSelections && collectionSelections.length > 0) {
               const collectionConditions = buildCollectionConditions(clVespaIds)
               if (collectionConditions.length > 0) {
-                const collectionQuery = buildCollectionFileYQL(collectionConditions)
+                const collectionQuery =
+                  buildCollectionFileYQL(collectionConditions)
                 appQueries.push(collectionQuery)
-                if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
+                if (!sources.includes(KbItemsSchema))
+                  sources.push(KbItemsSchema)
               } else {
                 this.logger.warn(
                   "Apps.KnowledgeBase specified for agent, but no valid collection conditions found. Skipping KnowledgeBase search part.",
@@ -1218,7 +1347,10 @@ export class VespaService {
       return conditions.join(" and ")
     }
 
-    const timestampCondition = buildTimestampConditions("createdAt", "createdAt")
+    const timestampCondition = buildTimestampConditions(
+      "createdAt",
+      "createdAt",
+    )
 
     const channelIdConditions =
       channelIds && channelIds.length > 0
@@ -1376,7 +1508,8 @@ export class VespaService {
       })
 
       // Filter out excluded schemas from AllSources
-      newSources = this.getSchemaSources().split(", ")
+      newSources = this.getSchemaSources()
+        .split(", ")
         .filter((source) => !sourcesToExclude.includes(source))
         .join(", ")
     }
@@ -1477,14 +1610,12 @@ export class VespaService {
       "ranking.profile": "unranked",
     }
 
-    return this.vespa
-      .search<VespaSearchResponse>(payload)
-      .catch((error) => {
-        throw new ErrorPerformingSearch({
-          cause: error as Error,
-          sources: sourcesString,
-        })
+    return this.vespa.search<VespaSearchResponse>(payload).catch((error) => {
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: sourcesString,
       })
+    })
   }
 
   groupVespaSearch = async (
@@ -1497,7 +1628,16 @@ export class VespaService {
     isDriveConnected: boolean,
     timestampRange?: { to: number; from: number } | null,
   ): Promise<AppEntityCounts> => {
-    return await this._groupVespaSearch(query, email, limit, timestampRange, isSlackConnected, isGmailConnected, isCalendarConnected, isDriveConnected)
+    return await this._groupVespaSearch(
+      query,
+      email,
+      limit,
+      timestampRange,
+      isSlackConnected,
+      isGmailConnected,
+      isCalendarConnected,
+      isDriveConnected,
+    )
   }
   async _groupVespaSearch(
     query: string,
@@ -1511,7 +1651,6 @@ export class VespaService {
   ): Promise<AppEntityCounts> {
     let excludedApps: Apps[] = []
     try {
-
       if (!isDriveConnected) {
         excludedApps.push(Apps.GoogleDrive)
       }
@@ -1600,7 +1739,7 @@ export class VespaService {
       isSlackConnected,
       isCalendarConnected,
       isDriveConnected,
-      isGmailConnected
+      isGmailConnected,
     })
   }
 
@@ -1648,7 +1787,6 @@ export class VespaService {
       if (!isSlackConnected) {
         excludedApps.push(Apps.Slack)
       }
-
     } catch (error) {
       // If no Slack connector is found, this is normal - exclude Slack from search
       // Only log as debug since this is expected behavior for users without Slack
@@ -1684,8 +1822,8 @@ export class VespaService {
       timeout: "30s",
       ...(offset
         ? {
-          offset,
-        }
+            offset,
+          }
         : {}),
       ...(app ? { app } : {}),
       ...(entity ? { entity } : {}),
@@ -1741,8 +1879,8 @@ export class VespaService {
       timeout: "30s",
       ...(offset
         ? {
-          offset,
-        }
+            offset,
+          }
         : {}),
       ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
     }
@@ -1861,7 +1999,7 @@ export class VespaService {
       collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
       driveIds = [], // docIds
       selectedItem = {},
-      clVespaIds
+      clVespaIds,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1883,7 +2021,7 @@ export class VespaService {
       collectionSelections, // Pass unified collectionSelections here
       driveIds,
       selectedItem,
-      clVespaIds
+      clVespaIds,
     )
 
     const hybridDefaultPayload = {
@@ -1899,8 +2037,8 @@ export class VespaService {
       timeout: "30s",
       ...(offset
         ? {
-          offset,
-        }
+            offset,
+          }
         : {}),
       ...(app ? { app } : {}),
       ...(entity ? { entity } : {}),
@@ -1920,23 +2058,20 @@ export class VespaService {
       })
   }
 
-
   GetDocument = async (schema: VespaSchema, docId: string) => {
     const opts = { namespace: this.config.namespace, docId, schema }
-    return this.vespa
-      .getDocument(opts)
-      .catch((error) => {
-        this.logger.error(error, `Error fetching document docId: ${docId}`)
-        throw new Error(getErrorMessage(error))
-      })
+    return this.vespa.getDocument(opts).catch((error) => {
+      this.logger.error(error, `Error fetching document docId: ${docId}`)
+      throw new Error(getErrorMessage(error))
+    })
   }
 
-  IfMailDocExist = async (
-    email: string,
-    docId: string,
-  ): Promise<boolean> => {
+  IfMailDocExist = async (email: string, docId: string): Promise<boolean> => {
     return this.vespa.ifMailDocExist(email, docId).catch((error) => {
-      this.logger.error(error, `Error checking if document docId: ${docId} exists`)
+      this.logger.error(
+        error,
+        `Error checking if document docId: ${docId} exists`,
+      )
       return false
     })
   }
@@ -1945,13 +2080,15 @@ export class VespaService {
     docIds: string[],
     generateAnswerSpan: Span,
   ): Promise<VespaSearchResponse> => {
-    const opts = { namespace: this.config.namespace, docIds, generateAnswerSpan }
-    return this.vespa
-      .getDocumentsByOnlyDocIds(opts)
-      .catch((error) => {
-        this.logger.error(error, `Error fetching document docIds: ${docIds}`)
-        throw new Error(getErrorMessage(error))
-      })
+    const opts = {
+      namespace: this.config.namespace,
+      docIds,
+      generateAnswerSpan,
+    }
+    return this.vespa.getDocumentsByOnlyDocIds(opts).catch((error) => {
+      this.logger.error(error, `Error fetching document docIds: ${docIds}`)
+      throw new Error(getErrorMessage(error))
+    })
   }
 
   /**
@@ -1965,7 +2102,10 @@ export class VespaService {
     return this.vespa
       .getRandomDocument(namespace, schema, cluster)
       .catch((error) => {
-        this.logger.error(error, `Error fetching random document for schema ${schema}`)
+        this.logger.error(
+          error,
+          `Error fetching random document for schema ${schema}`,
+        )
         throw new Error(getErrorMessage(error))
       })
   }
@@ -1980,7 +2120,10 @@ export class VespaService {
     return this.vespa
       .getDocumentsWithField(fieldName, opts, limit, offset)
       .catch((error) => {
-        this.logger.error(error, `Error fetching documents with field: ${fieldName}`)
+        this.logger.error(
+          error,
+          `Error fetching documents with field: ${fieldName}`,
+        )
         throw new Error(getErrorMessage(error))
       })
   }
@@ -2040,7 +2183,6 @@ export class VespaService {
     })
   }
 
-
   ifDocumentsExist = async (
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
@@ -2064,7 +2206,10 @@ export class VespaService {
     >
   > => {
     return this.vespa.ifMailDocumentsExist(mailIds).catch((error) => {
-      this.logger.error(error, `Error checking if mail documents exist: ${mailIds}`)
+      this.logger.error(
+        error,
+        `Error checking if mail documents exist: ${mailIds}`,
+      )
       throw new Error(getErrorMessage(error))
     })
   }
@@ -2077,15 +2222,13 @@ export class VespaService {
       { exists: boolean; updatedAt: number | null; permissions: string[] }
     >
   > => {
-    return this.vespa
-      .ifDocumentsExistInChatContainer(docIds)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error checking if documents exist in chat container: ${docIds}`,
-        )
-        throw new Error(getErrorMessage(error))
-      })
+    return this.vespa.ifDocumentsExistInChatContainer(docIds).catch((error) => {
+      this.logger.error(
+        error,
+        `Error checking if documents exist in chat container: ${docIds}`,
+      )
+      throw new Error(getErrorMessage(error))
+    })
   }
 
   ifDocumentsExistInSchema = async (
@@ -2132,7 +2275,10 @@ export class VespaService {
       return data
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error retrieving document count: , ${errMessage}`, error)
+      this.logger.error(
+        `Error retrieving document count: , ${errMessage}`,
+        error,
+      )
       throw new ErrorRetrievingDocuments({
         cause: error as Error,
         sources: "file",
@@ -2221,15 +2367,13 @@ export class VespaService {
       "ranking.profile": "default",
     }
 
-    return this.vespa
-      .getUsersByNamesAndEmails(searchPayload)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error fetching users by names and emails: ${searchPayload}`,
-        )
-        throw new Error(getErrorMessage(error))
-      }) as Promise<VespaSearchResponse>
+    return this.vespa.getUsersByNamesAndEmails(searchPayload).catch((error) => {
+      this.logger.error(
+        error,
+        `Error fetching users by names and emails: ${searchPayload}`,
+      )
+      throw new Error(getErrorMessage(error))
+    }) as Promise<VespaSearchResponse>
   }
 
   /**
@@ -2307,9 +2451,7 @@ export class VespaService {
   //   }
   // }
 
-  getItems = async (
-    params: GetItemsParams,
-  ): Promise<VespaSearchResponse> => {
+  getItems = async (params: GetItemsParams): Promise<VespaSearchResponse> => {
     const {
       schema,
       app,
@@ -2348,7 +2490,9 @@ export class VespaService {
     // Entity condition
     if (Array.isArray(entity) && entity.length > 0) {
       conditions.push(
-        entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or "),
+        entity
+          .map((e) => `entity contains '${escapeYqlValue(e)}'`)
+          .join(" or "),
       )
     } else if (!Array.isArray(entity) && entity) {
       conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
@@ -2372,7 +2516,10 @@ export class VespaService {
     let timestampField = []
 
     // Choose appropriate timestamp field based on schema
-    if (schemas.includes(mailSchema) || schemas.includes(mailAttachmentSchema)) {
+    if (
+      schemas.includes(mailSchema) ||
+      schemas.includes(mailAttachmentSchema)
+    ) {
       timestampField.push("timestamp")
     } else if (
       schemas.includes(fileSchema) ||
@@ -2488,24 +2635,20 @@ export class VespaService {
       timeout: "30s",
     }
 
-    return this.vespa
-      .getItems(searchPayload)
-      .catch((error) => {
-        const searchError = new ErrorPerformingSearch({
-          cause: error as Error,
-          sources: JSON.stringify(schema),
-          message: `getItems failed for schema ${schema}`,
-        })
-        this.logger.error(searchError, "Error in getItems function")
-        throw searchError
-      }) as Promise<VespaSearchResponse>
+    return this.vespa.getItems(searchPayload).catch((error) => {
+      const searchError = new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: JSON.stringify(schema),
+        message: `getItems failed for schema ${schema}`,
+      })
+      this.logger.error(searchError, "Error in getItems function")
+      throw searchError
+    }) as Promise<VespaSearchResponse>
   }
 
   // --- DataSource and DataSourceFile Specific Functions ---
 
-  insertDataSource = async (
-    document: VespaDataSource,
-  ): Promise<void> => {
+  insertDataSource = async (document: VespaDataSource): Promise<void> => {
     try {
       await this.insert(document as Inserts, datasourceSchema)
       this.logger.info(`DataSource ${document.docId} inserted successfully`)
@@ -2522,7 +2665,10 @@ export class VespaService {
       await this.insert(document as Inserts, dataSourceFileSchema)
       this.logger.info(`DataSourceFile ${document.docId} inserted successfully`)
     } catch (error) {
-      this.logger.error(`Error inserting DataSourceFile ${document.docId}`, error)
+      this.logger.error(
+        `Error inserting DataSourceFile ${document.docId}`,
+        error,
+      )
       throw error
     }
   }
@@ -2622,14 +2768,12 @@ export class VespaService {
     const errorMsg = `Error checking if file "${fileName}" exists for DataSource ID "${dataSourceId}" and user "${uploadedBy}"`
 
     try {
-      this.logger.debug(
-        "Checking if datasource file exists by name and ID",
-        { payload },
-      )
+      this.logger.debug("Checking if datasource file exists by name and ID", {
+        payload,
+      })
       const response = await this.vespa.search<VespaSearchResponse>(payload)
       return exists(response)
     } catch (error) {
-
       this.logger.error(errorMsg, error)
       throw new ErrorPerformingSearch({
         message: errorMsg,
@@ -2645,7 +2789,6 @@ export class VespaService {
     concurrency = 3,
     batchSize = 400,
   ): Promise<VespaSearchResult[] | null> => {
-
     const countPayload = {
       yql: `
       select * 
@@ -2663,7 +2806,8 @@ export class VespaService {
     let totalCount: number
 
     try {
-      const countResponse = await this.vespa.search<VespaSearchResponse>(countPayload)
+      const countResponse =
+        await this.vespa.search<VespaSearchResponse>(countPayload)
       totalCount = countResponse.root?.fields?.totalCount ?? 0
       this.logger.info(`Found ${totalCount} total files`)
       if (totalCount === 0) {
@@ -2833,16 +2977,14 @@ export class VespaService {
       }
     }
 
-    return this.vespa
-      .getDocumentsBythreadId(validThreadIds)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
-        )
-        const errMessage = getErrorMessage(error)
-        throw new Error(errMessage)
-      }) as Promise<VespaSearchResponse>
+    return this.vespa.getDocumentsBythreadId(validThreadIds).catch((error) => {
+      this.logger.error(
+        error,
+        `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
+      )
+      const errMessage = getErrorMessage(error)
+      throw new Error(errMessage)
+    }) as Promise<VespaSearchResponse>
   }
 
   SearchEmailThreads = async (
@@ -2896,19 +3038,22 @@ export class VespaService {
     // Fetch channelId
     if (channelName) {
       try {
-        const resp = await
-          this.vespa.getChatContainerIdByChannelName(channelName) as any,
+        const resp = (await this.vespa.getChatContainerIdByChannelName(
+            channelName,
+          )) as any,
           channelId = resp?.root?.children?.[0]?.fields?.docId
       } catch (e) {
-        this.logger.error(`Could not fetch channelId for channel: ${channelName}`, e)
+        this.logger.error(
+          `Could not fetch channelId for channel: ${channelName}`,
+          e,
+        )
       }
     }
 
     // Fetch userId
     if (userEmail) {
       try {
-        const resp =
-          this.vespa.getChatUserByEmail(userEmail) as any,
+        const resp = this.vespa.getChatUserByEmail(userEmail) as any,
           userId = resp?.root?.children?.[0]?.fields?.docId
       } catch (e) {
         this.logger.error(`Could not fetch userId for user: ${userEmail}`, e)
@@ -2995,7 +3140,9 @@ export class VespaService {
     }
 
     try {
-      return await this.vespa.getItems(payload) as Promise<VespaSearchResponse>
+      return (await this.vespa.getItems(
+        payload,
+      )) as Promise<VespaSearchResponse>
     } catch (error) {
       this.logger.error(`Vespa search error`, error)
       throw new ErrorPerformingSearch({
@@ -3008,15 +3155,15 @@ export class VespaService {
   getSlackUserDetails = async (
     userEmail: string,
   ): Promise<VespaSearchResponse> => {
-    return this.vespa
-      .getChatUserByEmail(userEmail)
-      .catch((error) => {
-        this.logger.error(`Could not fetch the userId with user email ${userEmail}`)
-        throw new ErrorPerformingSearch({
-          cause: error as Error,
-          sources: chatUserSchema,
-        })
+    return this.vespa.getChatUserByEmail(userEmail).catch((error) => {
+      this.logger.error(
+        `Could not fetch the userId with user email ${userEmail}`,
+      )
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: chatUserSchema,
       })
+    })
   }
 
   getFolderItems = async (
@@ -3026,7 +3173,12 @@ export class VespaService {
     email: string,
   ) => {
     try {
-      const resp = this.vespa.getFolderItem(docIds, schema, entity, email) as Promise<VespaSearchResponse>
+      const resp = this.vespa.getFolderItem(
+        docIds,
+        schema,
+        entity,
+        email,
+      ) as Promise<VespaSearchResponse>
       return resp
     } catch (error) {
       this.logger.error(
@@ -3037,5 +3189,4 @@ export class VespaService {
       throw new Error(errMessage)
     }
   }
-
 }

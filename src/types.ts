@@ -61,7 +61,6 @@ export enum Apps {
   KnowledgeBase = "KnowledgeBase",
   WebSearch = "web-search",
 
-
   // Microsoft apps (mirroring Google structure)
   MicrosoftDrive = "microsoft-drive",
   MicrosoftOutlook = "microsoft-outlook",
@@ -587,7 +586,6 @@ export const VespaMailAttachmentGetSchema = VespaMailAttachmentSchema.merge(
   defaultVespaFieldsSchema,
 )
 
-
 export const VespaKbFileSchemaBase = z.object({
   docId: z.string(),
   clId: z.string(),
@@ -621,7 +619,6 @@ const KbFileMatchFeaturesSchema = z.object({
 })
 export type KbFileMatchFeatures = z.infer<typeof KbFileMatchFeaturesSchema>
 
-
 export const VespaKbFileSearchSchema = VespaKbFileSchemaBase.extend({
   sddocname: z.literal(KbItemsSchema),
   matchfeatures: KbFileMatchFeaturesSchema,
@@ -639,8 +636,6 @@ export const VespaKbFileGetSchema = VespaKbFileSchemaBase.merge(
   defaultVespaFieldsSchema,
 )
 export type VespaKbFileGet = z.infer<typeof VespaKbFileGetSchema>
-
-
 
 export const VespaChatMessageSchema = z.object({
   docId: z.string(), // client_msg_id from Slack
@@ -781,7 +776,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatMessageSearchSchema,
   VespaDataSourceSearchSchema,
   VespaDataSourceFileSearchSchema,
-  VespaKbFileSearchSchema
+  VespaKbFileSearchSchema,
 ])
 
 // Get schema for DataSourceFile
@@ -1211,8 +1206,6 @@ export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
   pdf: Apps.GoogleDrive,
 }
 
-
-
 export const AutocompleteFileSchema = z
   .object({
     type: z.literal(fileSchema),
@@ -1431,7 +1424,6 @@ export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
   })
   .strip()
 
-
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -1444,7 +1436,6 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   ChatContainerResponseSchema,
   KbFileResponseSchema,
 ])
-
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
 
@@ -1541,7 +1532,6 @@ export type VespaQueryConfig = {
   clVespaIds?: string[]
 }
 
-
 export interface GetItemsParams {
   schema: VespaSchema | VespaSchema[]
   app?: Apps | Apps[] | null
@@ -1556,7 +1546,6 @@ export interface GetItemsParams {
   channelIds?: string[]
 }
 
-
 export interface GetThreadItemsParams {
   entity?: Entity | null
   timestampRange?: { from: any; to: any } | null
@@ -1569,34 +1558,33 @@ export interface GetThreadItemsParams {
   filterQuery?: string
 }
 
-
 /**
  * Logger interface for dependency injection
  * Compatible with the original logger interface from xyne
  */
 export interface ILogger {
-  debug(message: string, ...args: any[]): void;
-  info(message: string, ...args: any[]): void;
-  warn(message: string, ...args: any[]): void;
-  error(message: string | Error, ...args: any[]): void;
-  child(metadata: Record<string, any>): ILogger;
+  debug(message: string, ...args: any[]): void
+  info(message: string, ...args: any[]): void
+  warn(message: string, ...args: any[]): void
+  error(message: string | Error, ...args: any[]): void
+  child(metadata: Record<string, any>): ILogger
 }
-export type VespaConfig = typeof config;
+export type VespaConfig = typeof config
 
 interface Chunk {
   chunk: string
   chunkIndex: number
 }
 export interface ITextChunker {
-  chunkDocument(text: string): Chunk[];
+  chunkDocument(text: string): Chunk[]
 }
 /**
  * Main dependencies interface for dependency injection
  */
 export interface VespaDependencies {
-  logger: ILogger;
-  config: VespaConfig;
-  sourceSchemas: string[];
-  vespaEndpoint: string;
-  textChunker?: ITextChunker;
+  logger: ILogger
+  config: VespaConfig
+  sourceSchemas: string[]
+  vespaEndpoint: string
+  textChunker?: ITextChunker
 }
