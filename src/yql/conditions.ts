@@ -26,20 +26,20 @@ export function escapeYqlValue(value: string | number | boolean): string {
 export abstract class BaseCondition implements YqlCondition {
   abstract toString(): string
 
-  and(other: YqlCondition): AndCondition {
-    return new AndCondition([this, other])
+  and(other: YqlCondition): And {
+    return new And([this, other])
   }
 
-  or(other: YqlCondition): OrCondition {
-    return new OrCondition([this, other])
+  or(other: YqlCondition): Or {
+    return new Or([this, other])
   }
 
-  not(): NotCondition {
-    return new NotCondition(this)
+  not(): Not {
+    return new Not(this)
   }
 
-  parenthesize(): ParenthesizedCondition {
-    return new ParenthesizedCondition(this)
+  parenthesize(): Parenthesized {
+    return new Parenthesized(this)
   }
 }
 
@@ -102,7 +102,7 @@ export class VespaField extends BaseCondition {
 /**
  * User input condition for text search
  */
-export class UserInputCondition extends BaseCondition {
+export class UserInput extends BaseCondition {
   constructor(
     private queryParam: string = "@query",
     private targetHits?: number,
@@ -119,7 +119,7 @@ export class UserInputCondition extends BaseCondition {
 /**
  * Nearest neighbor condition for vector search
  */
-export class NearestNeighborCondition extends BaseCondition {
+export class NearestNeighbor extends BaseCondition {
   constructor(
     private field: FieldName,
     private queryParam: string = "e",
@@ -137,7 +137,7 @@ export class NearestNeighborCondition extends BaseCondition {
 /**
  * Logical AND condition with automatic email permission checking by default
  */
-export class AndCondition extends BaseCondition {
+export class And extends BaseCondition {
   constructor(
     private conditions: YqlCondition[],
     private requirePermissions: boolean = false,
@@ -166,8 +166,8 @@ export class AndCondition extends BaseCondition {
     return andCondition
   }
 
-  add(condition: YqlCondition): AndCondition {
-    return new AndCondition(
+  add(condition: YqlCondition): And {
+    return new And(
       [...this.conditions, condition],
       this.requirePermissions,
       this.userEmail,
@@ -181,13 +181,8 @@ export class AndCondition extends BaseCondition {
   static withEmailPermissions(
     conditions: YqlCondition[],
     userEmail: string = "@email",
-  ): AndCondition {
-    return new AndCondition(
-      conditions,
-      true,
-      userEmail,
-      PermissionFieldType.PERMISSIONS,
-    )
+  ): And {
+    return new And(conditions, true, userEmail, PermissionFieldType.PERMISSIONS)
   }
 
   /**
@@ -196,27 +191,22 @@ export class AndCondition extends BaseCondition {
   static withOwnerPermissions(
     conditions: YqlCondition[],
     userEmail: string = "@email",
-  ): AndCondition {
-    return new AndCondition(
-      conditions,
-      true,
-      userEmail,
-      PermissionFieldType.OWNER,
-    )
+  ): And {
+    return new And(conditions, true, userEmail, PermissionFieldType.OWNER)
   }
 
   /**
    * Creates an AndCondition without any permission checking
    */
-  static withoutPermissions(conditions: YqlCondition[]): AndCondition {
-    return new AndCondition(conditions, false)
+  static withoutPermissions(conditions: YqlCondition[]): And {
+    return new And(conditions, false)
   }
 }
 
 /**
  * Logical OR condition with automatic email permission checking by default
  */
-export class OrCondition extends BaseCondition {
+export class Or extends BaseCondition {
   constructor(
     private conditions: YqlCondition[],
     private requirePermissions: boolean = true, // Default to true for email permissions
@@ -252,8 +242,8 @@ export class OrCondition extends BaseCondition {
   add(
     condition: YqlCondition,
     requirePermissions: boolean = this.requirePermissions,
-  ): OrCondition {
-    return new OrCondition(
+  ): Or {
+    return new Or(
       [...this.conditions, condition],
       requirePermissions,
       this.userEmail,
@@ -267,13 +257,8 @@ export class OrCondition extends BaseCondition {
   static withEmailPermissions(
     conditions: YqlCondition[],
     userEmail: string = "@email",
-  ): OrCondition {
-    return new OrCondition(
-      conditions,
-      true,
-      userEmail,
-      PermissionFieldType.PERMISSIONS,
-    )
+  ): Or {
+    return new Or(conditions, true, userEmail, PermissionFieldType.PERMISSIONS)
   }
 
   /**
@@ -282,27 +267,22 @@ export class OrCondition extends BaseCondition {
   static withOwnerPermissions(
     conditions: YqlCondition[],
     userEmail: string = "@email",
-  ): OrCondition {
-    return new OrCondition(
-      conditions,
-      true,
-      userEmail,
-      PermissionFieldType.OWNER,
-    )
+  ): Or {
+    return new Or(conditions, true, userEmail, PermissionFieldType.OWNER)
   }
 
   /**
    * Creates an OrCondition without any permission checking
    */
-  static withoutPermissions(conditions: YqlCondition[]): OrCondition {
-    return new OrCondition(conditions, false)
+  static withoutPermissions(conditions: YqlCondition[]): Or {
+    return new Or(conditions, false)
   }
 }
 
 /**
  * NOT condition
  */
-export class NotCondition extends BaseCondition {
+export class Not extends BaseCondition {
   constructor(private condition: YqlCondition) {
     super()
   }
@@ -315,7 +295,7 @@ export class NotCondition extends BaseCondition {
 /**
  * Parenthesized condition for explicit grouping
  */
-export class ParenthesizedCondition extends BaseCondition {
+export class Parenthesized extends BaseCondition {
   constructor(private condition: YqlCondition) {
     super()
   }
@@ -328,7 +308,7 @@ export class ParenthesizedCondition extends BaseCondition {
 /**
  * Timestamp range condition helper
  */
-export class TimestampCondition extends BaseCondition {
+export class Timestamp extends BaseCondition {
   constructor(
     private fromField: FieldName,
     private toField: FieldName,
@@ -359,7 +339,7 @@ export class TimestampCondition extends BaseCondition {
 /**
  * Exclusion condition for document IDs
  */
-export class ExclusionCondition extends BaseCondition {
+export class Exclude extends BaseCondition {
   constructor(private docIds: string[]) {
     super()
   }
@@ -392,7 +372,7 @@ export class ExclusionCondition extends BaseCondition {
 /**
  * Inclusion condition for multiple values in a field
  */
-export class InclusionCondition extends BaseCondition {
+export class Include extends BaseCondition {
   constructor(
     private field: FieldName,
     private values: string[],
@@ -429,7 +409,7 @@ export class InclusionCondition extends BaseCondition {
   }
 }
 
-export class RawCondition extends BaseCondition {
+export class Raw extends BaseCondition {
   constructor(private condition: string) {
     super()
   }
@@ -437,3 +417,19 @@ export class RawCondition extends BaseCondition {
     return this.condition
   }
 }
+
+// Backward compatibility aliases
+export const AndCondition = And
+export const OrCondition = Or
+export const NotCondition = Not
+export const ParenthesizedCondition = Parenthesized
+export const TimestampCondition = Timestamp
+export const ExclusionCondition = Exclude
+export const InclusionCondition = Include
+export const RawCondition = Raw
+export const UserInputCondition = UserInput
+export const NearestNeighborCondition = NearestNeighbor
+
+// Additional aliases for the new names
+export const Exclusion = Exclude
+export const Inclusion = Include

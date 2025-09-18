@@ -8,13 +8,13 @@ import {
 import {
   BaseCondition,
   VespaField,
-  UserInputCondition,
-  NearestNeighborCondition,
-  AndCondition,
-  OrCondition,
-  TimestampCondition,
-  ExclusionCondition,
-  InclusionCondition,
+  UserInput,
+  NearestNeighbor,
+  And,
+  Or,
+  Timestamp,
+  Exclude,
+  Include,
   escapeYqlValue,
 } from "./conditions"
 import { PermissionCondition, PermissionWrapper } from "./permissions"
@@ -89,7 +89,7 @@ export class YqlBuilder {
    */
   whereAnd(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(new AndCondition(conditions))
+      this.whereConditions.push(new And(conditions))
     }
     return this
   }
@@ -99,7 +99,7 @@ export class YqlBuilder {
    */
   whereOr(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(new OrCondition(conditions))
+      this.whereConditions.push(new Or(conditions))
     }
     return this
   }
@@ -109,7 +109,7 @@ export class YqlBuilder {
    */
   userInput(queryParam: string = "@query", targetHits?: number): this {
     const hits = targetHits || this.options.targetHits
-    return this.where(new UserInputCondition(queryParam, hits))
+    return this.where(new UserInput(queryParam, hits))
   }
 
   /**
@@ -121,7 +121,7 @@ export class YqlBuilder {
     targetHits?: number,
   ): this {
     const hits = targetHits || this.options.targetHits
-    return this.where(new NearestNeighborCondition(field, queryParam, hits))
+    return this.where(new NearestNeighbor(field, queryParam, hits))
   }
 
   /**
@@ -134,14 +134,10 @@ export class YqlBuilder {
     targetHits?: number,
   ): this {
     const hits = targetHits || this.options.targetHits
-    const userInput = new UserInputCondition(queryParam, hits)
-    const vectorSearch = new NearestNeighborCondition(
-      vectorField,
-      vectorParam,
-      hits,
-    )
+    const userInput = new UserInput(queryParam, hits)
+    const vectorSearch = new NearestNeighbor(vectorField, vectorParam, hits)
 
-    return this.where(new OrCondition([userInput, vectorSearch]).parenthesize())
+    return this.where(new Or([userInput, vectorSearch]).parenthesize())
   }
 
   /**
@@ -156,7 +152,7 @@ export class YqlBuilder {
       (range.from !== null && range.from !== undefined) ||
       (range.to !== null && range.to !== undefined)
     ) {
-      return this.where(new TimestampCondition(fromField, toField, range))
+      return this.where(new Timestamp(fromField, toField, range))
     }
     return this
   }
@@ -171,7 +167,7 @@ export class YqlBuilder {
       return this.where(VespaField.contains("app", apps[0]!))
     } else if (apps.length > 1) {
       const conditions = apps.map((a) => VespaField.contains("app", a))
-      return this.where(new OrCondition(conditions).parenthesize())
+      return this.where(new Or(conditions).parenthesize())
     }
 
     return this
@@ -187,7 +183,7 @@ export class YqlBuilder {
       return this.where(VespaField.contains("entity", entities[0]!))
     } else if (entities.length > 1) {
       const conditions = entities.map((e) => VespaField.contains("entity", e))
-      return this.where(new OrCondition(conditions).parenthesize())
+      return this.where(new Or(conditions).parenthesize())
     }
 
     return this
@@ -197,7 +193,7 @@ export class YqlBuilder {
    * Add exclusion condition for document IDs
    */
   excludeDocIds(docIds: string[]): this {
-    const exclusion = new ExclusionCondition(docIds)
+    const exclusion = new Exclude(docIds)
     if (!exclusion.isEmpty()) {
       return this.where(exclusion)
     }
@@ -208,7 +204,7 @@ export class YqlBuilder {
    * Add inclusion condition for document IDs
    */
   includeDocIds(docIds: string[]): this {
-    const inclusion = new InclusionCondition("docId", docIds)
+    const inclusion = new Include("docId", docIds)
     if (!inclusion.isEmpty()) {
       return this.where(inclusion)
     }
@@ -219,7 +215,7 @@ export class YqlBuilder {
    * Add inclusion condition for any field
    */
   includeValues(field: FieldName, values: string[]): this {
-    const inclusion = new InclusionCondition(field, values)
+    const inclusion = new Include(field, values)
     if (!inclusion.isEmpty()) {
       return this.where(inclusion)
     }
@@ -242,7 +238,7 @@ export class YqlBuilder {
       const combinedLabels =
         labelConditions.length === 1
           ? labelConditions[0]!
-          : new OrCondition(labelConditions).parenthesize()
+          : new Or(labelConditions).parenthesize()
 
       return this.where(combinedLabels.not())
     }
@@ -311,7 +307,7 @@ export class YqlBuilder {
       const combinedConditions =
         this.whereConditions.length === 1
           ? this.whereConditions[0]!
-          : new AndCondition(this.whereConditions)
+          : new And(this.whereConditions)
 
       yql += ` where ${combinedConditions.toString()}`
     }
