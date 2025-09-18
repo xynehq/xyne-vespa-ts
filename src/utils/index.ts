@@ -16,10 +16,11 @@ export const escapeYqlValue = (value: string): string => {
   return value.replace(/'/g, "''")
 }
 
-
-
 // Gmail intent processing function
-export const processGmailIntent = (intent: Intent, logger: ILogger): string[] => {
+export const processGmailIntent = (
+  intent: Intent,
+  logger: ILogger,
+): string[] => {
   const intentConditions: string[] = []
 
   // Helper function to validate email addresses
@@ -129,8 +130,7 @@ export const processGmailIntent = (intent: Intent, logger: ILogger): string[] =>
   return intentConditions
 }
 
-
- export const dateToUnixTimestamp = (
+export const dateToUnixTimestamp = (
   dateString: string,
   endOfDay: boolean = false,
 ): string => {

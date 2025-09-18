@@ -21,7 +21,7 @@ import {
   SlackEntity,
   chatContainerSchema,
   KbItemsSchema,
-} from "./types";
+} from "./types"
 import type {
   VespaAutocompleteResponse,
   VespaFile,
@@ -43,32 +43,37 @@ import type {
   VespaQueryConfig,
   GetItemsParams,
   GetThreadItemsParams,
-} from "./types";
-import { SearchModes } from "./types";
-import { dateToUnixTimestamp, escapeYqlValue, getErrorMessage, processGmailIntent } from "./utils";
+} from "./types"
+import { SearchModes } from "./types"
+import {
+  dateToUnixTimestamp,
+  escapeYqlValue,
+  getErrorMessage,
+  processGmailIntent,
+} from "./utils"
 import {
   ErrorDeletingDocuments,
   ErrorRetrievingDocuments,
   ErrorPerformingSearch,
   ErrorInsertingDocument,
-} from "./errors";
-import crypto from "crypto";
-import VespaClient from "./client/vespaClient";
-import pLimit from "p-limit";
-import type { ILogger, VespaConfig, VespaDependencies } from "./types";
-import { is } from "zod/locales";
+} from "./errors"
+import crypto from "crypto"
+import VespaClient from "./client/vespaClient"
+import pLimit from "p-limit"
+import type { ILogger, VespaConfig, VespaDependencies } from "./types"
+import { is } from "zod/locales"
 
 type YqlProfile = {
-  profile: SearchModes;
-  yql: string;
-};
+  profile: SearchModes
+  yql: string
+}
 
 interface EntityCounts {
-  [entity: string]: number;
+  [entity: string]: number
 }
 
 export interface AppEntityCounts {
-  [app: string]: EntityCounts;
+  [app: string]: EntityCounts
 }
 
 const AllSources = [
@@ -86,22 +91,22 @@ const AllSources = [
 ]
 
 export class VespaService {
-  private logger: ILogger;
-  private config: VespaConfig;
-  private vespa: VespaClient;
-  private schemaSources: string[];
-  private vespaEndpoint: string;
+  private logger: ILogger
+  private config: VespaConfig
+  private vespa: VespaClient
+  private schemaSources: string[]
+  private vespaEndpoint: string
   constructor(dependencies: VespaDependencies) {
-    this.logger = dependencies.logger.child({ module: "vespa" });
-    this.config = dependencies.config;
-    this.schemaSources = dependencies.sourceSchemas || AllSources;
+    this.logger = dependencies.logger.child({ module: "vespa" })
+    this.config = dependencies.config
+    this.schemaSources = dependencies.sourceSchemas || AllSources
     this.vespaEndpoint = dependencies.vespaEndpoint
     // Initialize Vespa clients
-    this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config);
+    this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config)
   }
 
   getSchemaSources(): string {
-    return this.schemaSources.join(", ");
+    return this.schemaSources.join(", ")
   }
   /**
    * Deletes all documents from the specified schema and namespace in Vespa.
@@ -147,7 +152,10 @@ export class VespaService {
     let lastError: any
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        await this.vespa.insert(document, { namespace: this.config.namespace, schema })
+        await this.vespa.insert(document, {
+          namespace: this.config.namespace,
+          schema,
+        })
         this.logger.debug(`Inserted document ${document.docId}`)
         return
       } catch (error) {
@@ -189,7 +197,10 @@ export class VespaService {
 
   insertUser = async (user: VespaUser) => {
     return this.vespa
-      .insertUser(user, { namespace: this.config.namespace, schema: userSchema })
+      .insertUser(user, {
+        namespace: this.config.namespace,
+        schema: userSchema,
+      })
       .catch((error) => {
         this.logger.error(`Inserting user failed with error:`, error)
         throw new ErrorInsertingDocument({
@@ -228,7 +239,8 @@ export class VespaService {
     email: string,
     limit: number = 5,
   ): Promise<VespaAutocompleteResponse> => {
-    const sources = this.getSchemaSources().split(", ")
+    const sources = this.getSchemaSources()
+      .split(", ")
       .filter((s) => s !== chatMessageSchema)
       .join(", ")
 
@@ -284,18 +296,16 @@ export class VespaService {
       timeout: "5s",
     }
 
-    return this.vespa
-      .autoComplete(searchPayload)
-      .catch((error) => {
-        this.logger.error(`Autocomplete failed with error:`, error)
-        throw new ErrorPerformingSearch({
-          message: `Error performing autocomplete search`,
-          cause: error as Error,
-          sources: "file",
-        })
-        // TODO: instead of null just send empty response
-        throw error
+    return this.vespa.autoComplete(searchPayload).catch((error) => {
+      this.logger.error(`Autocomplete failed with error:`, error)
+      throw new ErrorPerformingSearch({
+        message: `Error performing autocomplete search`,
+        cause: error as Error,
+        sources: "file",
       })
+      // TODO: instead of null just send empty response
+      throw error
+    })
   }
 
   handleAppsNotInYql = (app: Apps | null, includedApp: Apps[]) => {
@@ -333,17 +343,19 @@ export class VespaService {
     // ToDo we have to handle this filter as we are applying multiple times app filtering
     // Helper function to build app/entity filter
     const buildAppEntityFilter = () => {
-      return `${app
-        ? (Array.isArray(app) && app.length > 0)
-          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-          : "and app contains @app"
-        : ""
-        } ${entity
+      return `${
+        app
+          ? (Array.isArray(app) && app.length > 0)
+            ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
+            : "and app contains @app"
+          : ""
+      } ${
+        entity
           ? Array.isArray(entity) && entity.length > 0
             ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
             : "and entity contains @entity"
           : ""
-        }`.trim()
+      }`.trim()
     }
 
     // Helper function to build exclusion condition
@@ -375,9 +387,10 @@ export class VespaService {
           ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
         )
         ${userTimestamp.length ? `and (${userTimestamp})` : ""}
-        ${!hasAppOrEntity
-          ? `and app contains "${Apps.GoogleWorkspace}"`
-          : `${appOrEntityFilter} and permissions contains @email`
+        ${
+          !hasAppOrEntity
+            ? `and app contains "${Apps.GoogleWorkspace}"`
+            : `${appOrEntityFilter} and permissions contains @email`
         }
         ${intentFilter}
       )
@@ -632,17 +645,19 @@ export class VespaService {
 
     // Helper function to build app/entity filter
     const buildAppEntityFilter = () => {
-      return `${app
+      return `${
+        app
           ? (Array.isArray(app) && app.length > 0)
             ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
             : "and app contains @app"
           : ""
-        } ${entity
+      } ${
+        entity
           ? Array.isArray(entity) && entity.length > 0
             ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
             : "and entity contains @entity"
           : ""
-        }`.trim()
+      }`.trim()
     }
     // Helper function to build exclusion condition
     const buildExclusionCondition = () => {
@@ -667,9 +682,10 @@ export class VespaService {
       (
         ({targetHits:${hits}} userInput(@query))
         ${timestampRange ? `and (${userTimestamp})` : ""}
-        ${!hasAppOrEntity
-          ? `and app contains "${Apps.GoogleWorkspace}"`
-          : `${appOrEntityFilter} and permissions contains @email`
+        ${
+          !hasAppOrEntity
+            ? `and app contains "${Apps.GoogleWorkspace}"`
+            : `${appOrEntityFilter} and permissions contains @email`
         }
       )
       or
@@ -749,7 +765,10 @@ export class VespaService {
       let channelIds: string[] = []
       const intentFilter = this.buildIntentFilter(intent)
       channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
-      const channelIdConditions = buildDocsInclusionCondition("docId", channelIds)
+      const channelIdConditions = buildDocsInclusionCondition(
+        "docId",
+        channelIds,
+      )
 
       return `
       (
@@ -1018,7 +1037,10 @@ export class VespaService {
       return conditions.join(" and ")
     }
 
-    const timestampCondition = buildTimestampConditions("createdAt", "createdAt")
+    const timestampCondition = buildTimestampConditions(
+      "createdAt",
+      "createdAt",
+    )
 
     const channelIdConditions =
       channelIds && channelIds.length > 0
@@ -1176,7 +1198,8 @@ export class VespaService {
       })
 
       // Filter out excluded schemas from AllSources
-      newSources = this.getSchemaSources().split(", ")
+      newSources = this.getSchemaSources()
+        .split(", ")
         .filter((source) => !sourcesToExclude.includes(source))
         .join(", ")
     }
@@ -1277,14 +1300,12 @@ export class VespaService {
       "ranking.profile": "unranked",
     }
 
-    return this.vespa
-      .search<VespaSearchResponse>(payload)
-      .catch((error) => {
-        throw new ErrorPerformingSearch({
-          cause: error as Error,
-          sources: sourcesString,
-        })
+    return this.vespa.search<VespaSearchResponse>(payload).catch((error) => {
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: sourcesString,
       })
+    })
   }
 
   groupVespaSearch = async (
@@ -1292,12 +1313,21 @@ export class VespaService {
     email: string,
     limit = this.config.page,
     isSlackConnected: boolean,
-    isGmailConnected:boolean,
-    isCalendarConnected:boolean,
-    isDriveConnected:boolean,
+    isGmailConnected: boolean,
+    isCalendarConnected: boolean,
+    isDriveConnected: boolean,
     timestampRange?: { to: number; from: number } | null,
   ): Promise<AppEntityCounts> => {
-    return await this._groupVespaSearch(query, email, limit, timestampRange, isSlackConnected,isGmailConnected,isCalendarConnected,isDriveConnected)
+    return await this._groupVespaSearch(
+      query,
+      email,
+      limit,
+      timestampRange,
+      isSlackConnected,
+      isGmailConnected,
+      isCalendarConnected,
+      isDriveConnected,
+    )
   }
   async _groupVespaSearch(
     query: string,
@@ -1311,14 +1341,13 @@ export class VespaService {
   ): Promise<AppEntityCounts> {
     let excludedApps: Apps[] = []
     try {
-
-      if(!isDriveConnected){
+      if (!isDriveConnected) {
         excludedApps.push(Apps.GoogleDrive)
       }
-      if(!isCalendarConnected){
+      if (!isCalendarConnected) {
         excludedApps.push(Apps.GoogleCalendar)
       }
-      if(!isGmailConnected){
+      if (!isGmailConnected) {
         excludedApps.push(Apps.Gmail)
       }
       if (!isSlackConnected) {
@@ -1400,7 +1429,7 @@ export class VespaService {
       isSlackConnected,
       isCalendarConnected,
       isDriveConnected,
-      isGmailConnected
+      isGmailConnected,
     })
   }
 
@@ -1436,19 +1465,18 @@ export class VespaService {
     // Check if Slack sync job exists for the user (only for local vespa)
     let excludedApps: Apps[] = []
     try {
-      if(!isDriveConnected){
+      if (!isDriveConnected) {
         excludedApps.push(Apps.GoogleDrive)
       }
-      if(!isCalendarConnected){
+      if (!isCalendarConnected) {
         excludedApps.push(Apps.GoogleCalendar)
       }
-      if(!isGmailConnected){
+      if (!isGmailConnected) {
         excludedApps.push(Apps.Gmail)
       }
       if (!isSlackConnected) {
         excludedApps.push(Apps.Slack)
       }
-      
     } catch (error) {
       // If no Slack connector is found, this is normal - exclude Slack from search
       // Only log as debug since this is expected behavior for users without Slack
@@ -1457,7 +1485,7 @@ export class VespaService {
       )
       excludedApps.push(Apps.Slack)
     }
-    
+
     let { yql, profile } = this.HybridDefaultProfile(
       limit,
       app,
@@ -1484,8 +1512,8 @@ export class VespaService {
       timeout: "30s",
       ...(offset
         ? {
-          offset,
-        }
+            offset,
+          }
         : {}),
       ...(app ? { app } : {}),
       ...(entity ? { entity } : {}),
@@ -1541,8 +1569,8 @@ export class VespaService {
       timeout: "30s",
       ...(offset
         ? {
-          offset,
-        }
+            offset,
+          }
         : {}),
       ...(isDebugMode ? { "ranking.listFeatures": true, tracelevel: 4 } : {}),
     }
@@ -1697,8 +1725,8 @@ export class VespaService {
       timeout: "30s",
       ...(offset
         ? {
-          offset,
-        }
+            offset,
+          }
         : {}),
       ...(app ? { app } : {}),
       ...(entity ? { entity } : {}),
@@ -1718,23 +1746,20 @@ export class VespaService {
       })
   }
 
-
   GetDocument = async (schema: VespaSchema, docId: string) => {
     const opts = { namespace: this.config.namespace, docId, schema }
-    return this.vespa
-      .getDocument(opts)
-      .catch((error) => {
-        this.logger.error(error, `Error fetching document docId: ${docId}`)
-        throw new Error(getErrorMessage(error))
-      })
+    return this.vespa.getDocument(opts).catch((error) => {
+      this.logger.error(error, `Error fetching document docId: ${docId}`)
+      throw new Error(getErrorMessage(error))
+    })
   }
 
-  IfMailDocExist = async (
-    email: string,
-    docId: string,
-  ): Promise<boolean> => {
+  IfMailDocExist = async (email: string, docId: string): Promise<boolean> => {
     return this.vespa.ifMailDocExist(email, docId).catch((error) => {
-      this.logger.error(error, `Error checking if document docId: ${docId} exists`)
+      this.logger.error(
+        error,
+        `Error checking if document docId: ${docId} exists`,
+      )
       return false
     })
   }
@@ -1743,13 +1768,15 @@ export class VespaService {
     docIds: string[],
     generateAnswerSpan: Span,
   ): Promise<VespaSearchResponse> => {
-    const opts = { namespace: this.config.namespace, docIds, generateAnswerSpan }
-    return this.vespa
-      .getDocumentsByOnlyDocIds(opts)
-      .catch((error) => {
-        this.logger.error(error, `Error fetching document docIds: ${docIds}`)
-        throw new Error(getErrorMessage(error))
-      })
+    const opts = {
+      namespace: this.config.namespace,
+      docIds,
+      generateAnswerSpan,
+    }
+    return this.vespa.getDocumentsByOnlyDocIds(opts).catch((error) => {
+      this.logger.error(error, `Error fetching document docIds: ${docIds}`)
+      throw new Error(getErrorMessage(error))
+    })
   }
 
   /**
@@ -1763,7 +1790,10 @@ export class VespaService {
     return this.vespa
       .getRandomDocument(namespace, schema, cluster)
       .catch((error) => {
-        this.logger.error(error, `Error fetching random document for schema ${schema}`)
+        this.logger.error(
+          error,
+          `Error fetching random document for schema ${schema}`,
+        )
         throw new Error(getErrorMessage(error))
       })
   }
@@ -1778,7 +1808,10 @@ export class VespaService {
     return this.vespa
       .getDocumentsWithField(fieldName, opts, limit, offset)
       .catch((error) => {
-        this.logger.error(error, `Error fetching documents with field: ${fieldName}`)
+        this.logger.error(
+          error,
+          `Error fetching documents with field: ${fieldName}`,
+        )
         throw new Error(getErrorMessage(error))
       })
   }
@@ -1838,7 +1871,6 @@ export class VespaService {
     })
   }
 
-
   ifDocumentsExist = async (
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
@@ -1862,7 +1894,10 @@ export class VespaService {
     >
   > => {
     return this.vespa.ifMailDocumentsExist(mailIds).catch((error) => {
-      this.logger.error(error, `Error checking if mail documents exist: ${mailIds}`)
+      this.logger.error(
+        error,
+        `Error checking if mail documents exist: ${mailIds}`,
+      )
       throw new Error(getErrorMessage(error))
     })
   }
@@ -1875,15 +1910,13 @@ export class VespaService {
       { exists: boolean; updatedAt: number | null; permissions: string[] }
     >
   > => {
-    return this.vespa
-      .ifDocumentsExistInChatContainer(docIds)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error checking if documents exist in chat container: ${docIds}`,
-        )
-        throw new Error(getErrorMessage(error))
-      })
+    return this.vespa.ifDocumentsExistInChatContainer(docIds).catch((error) => {
+      this.logger.error(
+        error,
+        `Error checking if documents exist in chat container: ${docIds}`,
+      )
+      throw new Error(getErrorMessage(error))
+    })
   }
 
   ifDocumentsExistInSchema = async (
@@ -1930,7 +1963,10 @@ export class VespaService {
       return data
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error retrieving document count: , ${errMessage}`, error)
+      this.logger.error(
+        `Error retrieving document count: , ${errMessage}`,
+        error,
+      )
       throw new ErrorRetrievingDocuments({
         cause: error as Error,
         sources: "file",
@@ -2019,15 +2055,13 @@ export class VespaService {
       "ranking.profile": "default",
     }
 
-    return this.vespa
-      .getUsersByNamesAndEmails(searchPayload)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error fetching users by names and emails: ${searchPayload}`,
-        )
-        throw new Error(getErrorMessage(error))
-      }) as Promise<VespaSearchResponse>
+    return this.vespa.getUsersByNamesAndEmails(searchPayload).catch((error) => {
+      this.logger.error(
+        error,
+        `Error fetching users by names and emails: ${searchPayload}`,
+      )
+      throw new Error(getErrorMessage(error))
+    }) as Promise<VespaSearchResponse>
   }
 
   /**
@@ -2105,9 +2139,7 @@ export class VespaService {
   //   }
   // }
 
-  getItems = async (
-    params: GetItemsParams,
-  ): Promise<VespaSearchResponse> => {
+  getItems = async (params: GetItemsParams): Promise<VespaSearchResponse> => {
     const {
       schema,
       app,
@@ -2146,7 +2178,9 @@ export class VespaService {
     // Entity condition
     if (Array.isArray(entity) && entity.length > 0) {
       conditions.push(
-        entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or "),
+        entity
+          .map((e) => `entity contains '${escapeYqlValue(e)}'`)
+          .join(" or "),
       )
     } else if (!Array.isArray(entity) && entity) {
       conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
@@ -2170,7 +2204,10 @@ export class VespaService {
     let timestampField = []
 
     // Choose appropriate timestamp field based on schema
-    if (schemas.includes(mailSchema) || schemas.includes(mailAttachmentSchema)) {
+    if (
+      schemas.includes(mailSchema) ||
+      schemas.includes(mailAttachmentSchema)
+    ) {
       timestampField.push("timestamp")
     } else if (
       schemas.includes(fileSchema) ||
@@ -2286,24 +2323,20 @@ export class VespaService {
       timeout: "30s",
     }
 
-    return this.vespa
-      .getItems(searchPayload)
-      .catch((error) => {
-        const searchError = new ErrorPerformingSearch({
-          cause: error as Error,
-          sources: JSON.stringify(schema),
-          message: `getItems failed for schema ${schema}`,
-        })
-        this.logger.error(searchError, "Error in getItems function")
-        throw searchError
-      }) as Promise<VespaSearchResponse>
+    return this.vespa.getItems(searchPayload).catch((error) => {
+      const searchError = new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: JSON.stringify(schema),
+        message: `getItems failed for schema ${schema}`,
+      })
+      this.logger.error(searchError, "Error in getItems function")
+      throw searchError
+    }) as Promise<VespaSearchResponse>
   }
 
   // --- DataSource and DataSourceFile Specific Functions ---
 
-  insertDataSource = async (
-    document: VespaDataSource,
-  ): Promise<void> => {
+  insertDataSource = async (document: VespaDataSource): Promise<void> => {
     try {
       await this.insert(document as Inserts, datasourceSchema)
       this.logger.info(`DataSource ${document.docId} inserted successfully`)
@@ -2320,7 +2353,10 @@ export class VespaService {
       await this.insert(document as Inserts, dataSourceFileSchema)
       this.logger.info(`DataSourceFile ${document.docId} inserted successfully`)
     } catch (error) {
-      this.logger.error(`Error inserting DataSourceFile ${document.docId}`, error)
+      this.logger.error(
+        `Error inserting DataSourceFile ${document.docId}`,
+        error,
+      )
       throw error
     }
   }
@@ -2420,14 +2456,12 @@ export class VespaService {
     const errorMsg = `Error checking if file "${fileName}" exists for DataSource ID "${dataSourceId}" and user "${uploadedBy}"`
 
     try {
-      this.logger.debug(
-        "Checking if datasource file exists by name and ID",
-        { payload },
-      )
+      this.logger.debug("Checking if datasource file exists by name and ID", {
+        payload,
+      })
       const response = await this.vespa.search<VespaSearchResponse>(payload)
       return exists(response)
     } catch (error) {
-
       this.logger.error(errorMsg, error)
       throw new ErrorPerformingSearch({
         message: errorMsg,
@@ -2443,7 +2477,6 @@ export class VespaService {
     concurrency = 3,
     batchSize = 400,
   ): Promise<VespaSearchResult[] | null> => {
-
     const countPayload = {
       yql: `
       select * 
@@ -2461,7 +2494,8 @@ export class VespaService {
     let totalCount: number
 
     try {
-      const countResponse = await this.vespa.search<VespaSearchResponse>(countPayload)
+      const countResponse =
+        await this.vespa.search<VespaSearchResponse>(countPayload)
       totalCount = countResponse.root?.fields?.totalCount ?? 0
       this.logger.info(`Found ${totalCount} total files`)
       if (totalCount === 0) {
@@ -2631,16 +2665,14 @@ export class VespaService {
       }
     }
 
-    return this.vespa
-      .getDocumentsBythreadId(validThreadIds)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
-        )
-        const errMessage = getErrorMessage(error)
-        throw new Error(errMessage)
-      }) as Promise<VespaSearchResponse>
+    return this.vespa.getDocumentsBythreadId(validThreadIds).catch((error) => {
+      this.logger.error(
+        error,
+        `Error fetching documents by threadIds: ${validThreadIds.join(", ")}`,
+      )
+      const errMessage = getErrorMessage(error)
+      throw new Error(errMessage)
+    }) as Promise<VespaSearchResponse>
   }
 
   SearchEmailThreads = async (
@@ -2694,19 +2726,22 @@ export class VespaService {
     // Fetch channelId
     if (channelName) {
       try {
-        const resp = await
-          this.vespa.getChatContainerIdByChannelName(channelName) as any,
+        const resp = (await this.vespa.getChatContainerIdByChannelName(
+            channelName,
+          )) as any,
           channelId = resp?.root?.children?.[0]?.fields?.docId
       } catch (e) {
-        this.logger.error(`Could not fetch channelId for channel: ${channelName}`, e)
+        this.logger.error(
+          `Could not fetch channelId for channel: ${channelName}`,
+          e,
+        )
       }
     }
 
     // Fetch userId
     if (userEmail) {
       try {
-        const resp =
-          this.vespa.getChatUserByEmail(userEmail) as any,
+        const resp = this.vespa.getChatUserByEmail(userEmail) as any,
           userId = resp?.root?.children?.[0]?.fields?.docId
       } catch (e) {
         this.logger.error(`Could not fetch userId for user: ${userEmail}`, e)
@@ -2793,7 +2828,9 @@ export class VespaService {
     }
 
     try {
-      return await this.vespa.getItems(payload) as Promise<VespaSearchResponse>
+      return (await this.vespa.getItems(
+        payload,
+      )) as Promise<VespaSearchResponse>
     } catch (error) {
       this.logger.error(`Vespa search error`, error)
       throw new ErrorPerformingSearch({
@@ -2806,15 +2843,15 @@ export class VespaService {
   getSlackUserDetails = async (
     userEmail: string,
   ): Promise<VespaSearchResponse> => {
-    return this.vespa
-      .getChatUserByEmail(userEmail)
-      .catch((error) => {
-        this.logger.error(`Could not fetch the userId with user email ${userEmail}`)
-        throw new ErrorPerformingSearch({
-          cause: error as Error,
-          sources: chatUserSchema,
-        })
+    return this.vespa.getChatUserByEmail(userEmail).catch((error) => {
+      this.logger.error(
+        `Could not fetch the userId with user email ${userEmail}`,
+      )
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: chatUserSchema,
       })
+    })
   }
 
   getFolderItems = async (
@@ -2824,7 +2861,12 @@ export class VespaService {
     email: string,
   ) => {
     try {
-      const resp = this.vespa.getFolderItem(docIds, schema, entity, email) as Promise<VespaSearchResponse>
+      const resp = this.vespa.getFolderItem(
+        docIds,
+        schema,
+        entity,
+        email,
+      ) as Promise<VespaSearchResponse>
       return resp
     } catch (error) {
       this.logger.error(
@@ -2835,5 +2877,4 @@ export class VespaService {
       throw new Error(errMessage)
     }
   }
-
 }

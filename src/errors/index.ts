@@ -1,5 +1,3 @@
-
-
 type BaseErrorOpts = {
   message?: string
   cause?: Error

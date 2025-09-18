@@ -34,15 +34,18 @@ export interface AppEntityCounts {
 
 // Console fallback logger
 const consoleLogger: ILogger = {
-  info: (message: string, ...args: any[]) => console.info(`[INFO] ${message}`, ...args),
+  info: (message: string, ...args: any[]) =>
+    console.info(`[INFO] ${message}`, ...args),
   error: (message: string | Error, ...args: any[]) => {
-    const msg = message instanceof Error ? message.message : message;
-    console.error(`[ERROR] ${msg}`, ...args);
+    const msg = message instanceof Error ? message.message : message
+    console.error(`[ERROR] ${msg}`, ...args)
   },
-  warn: (message: string, ...args: any[]) => console.warn(`[WARN] ${message}`, ...args),
-  debug: (message: string, ...args: any[]) => console.debug(`[DEBUG] ${message}`, ...args),
+  warn: (message: string, ...args: any[]) =>
+    console.warn(`[WARN] ${message}`, ...args),
+  debug: (message: string, ...args: any[]) =>
+    console.debug(`[DEBUG] ${message}`, ...args),
   child: (metadata: Record<string, any>) => consoleLogger,
-};
+}
 type VespaConfigValues = {
   namespace?: string
   schema?: VespaSchema
@@ -55,11 +58,20 @@ class VespaClient {
   private vespaEndpoint: string
   private logger: ILogger
 
-  constructor(endpoint?: string, logger?: ILogger, config?: { vespaMaxRetryAttempts?: number; vespaRetryDelay?: number; vespaBaseHost?: string }) {
-    this.logger = logger || consoleLogger;
+  constructor(
+    endpoint?: string,
+    logger?: ILogger,
+    config?: {
+      vespaMaxRetryAttempts?: number
+      vespaRetryDelay?: number
+      vespaBaseHost?: string
+    },
+  ) {
+    this.logger = logger || consoleLogger
     this.maxRetries = config?.vespaMaxRetryAttempts || 3
     this.retryDelay = config?.vespaRetryDelay || 1000 // milliseconds
-    this.vespaEndpoint = endpoint || `http://${config?.vespaBaseHost || "localhost"}:8080`
+    this.vespaEndpoint =
+      endpoint || `http://${config?.vespaBaseHost || "localhost"}:8080`
   }
 
   private async delay(ms: number): Promise<void> {
@@ -134,7 +146,10 @@ class VespaClient {
       const result = await response.json()
       return result as T
     } catch (error: any) {
-      this.logger.error(`VespaClient.search error: ${JSON.stringify(error)}`, error)
+      this.logger.error(
+        `VespaClient.search error: ${JSON.stringify(error)}`,
+        error,
+      )
       throw new Error(`Vespa search error: ${error.message}`)
     }
   }
@@ -320,7 +335,11 @@ class VespaClient {
       }
     } catch (error) {
       const errorMessage = getErrorMessage(error)
-      this.logger.error(`Error inserting user ${user.docId}:`, errorMessage, error)
+      this.logger.error(
+        `Error inserting user ${user.docId}:`,
+        errorMessage,
+        error,
+      )
       throw new Error(`Error inserting user ${user.docId}: ${errorMessage}`)
     }
   }
@@ -349,7 +368,7 @@ class VespaClient {
         )
       }
 
-      const data = await response.json() as VespaAutocompleteResponse
+      const data = (await response.json()) as VespaAutocompleteResponse
       return data
     } catch (error) {
       this.logger.error(`VespaClient.autoComplete error:`, error)
@@ -378,7 +397,7 @@ class VespaClient {
         )
       }
 
-      const data = await response.json() as VespaSearchResponse
+      const data = (await response.json()) as VespaSearchResponse
       return handleVespaGroupResponse(data)
     } catch (error) {
       this.logger.error(
@@ -417,7 +436,7 @@ class VespaClient {
         )
       }
 
-      const data = await response.json() as any
+      const data = (await response.json()) as any
 
       // Extract the total number of hits from the response
       const totalCount = data?.root?.fields?.totalCount
@@ -457,7 +476,7 @@ class VespaClient {
         )
       }
 
-      const document = await response.json() as VespaGetResult
+      const document = (await response.json()) as VespaGetResult
       return document
     } catch (error) {
       const errMessage = getErrorMessage(error)
@@ -500,7 +519,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
       return result
     } catch (error) {
       const errMessage = getErrorMessage(error)
@@ -664,7 +683,10 @@ class VespaClient {
       this.logger.info(`Document ${docId} deleted successfully.`)
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error deleting document ${docId}:  ${errMessage}`, error)
+      this.logger.error(
+        `Error deleting document ${docId}:  ${errMessage}`,
+        error,
+      )
       throw new Error(`Error deleting document ${docId}:  ${errMessage}`)
     }
   }
@@ -723,7 +745,7 @@ class VespaClient {
           )
         }
 
-        const result = await response.json() as VespaSearchResponse
+        const result = (await response.json()) as VespaSearchResponse
 
         // Extract found documents with their docId, updatedAt, and permissions
         const foundDocs =
@@ -798,7 +820,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
 
       // Extract found documents with their docId and updatedAt
       const foundDocs =
@@ -825,7 +847,10 @@ class VespaClient {
       return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence:  ${errMessage}`, error)
+      this.logger.error(
+        `Error checking documents existence:  ${errMessage}`,
+        error,
+      )
       throw error
     }
   }
@@ -868,7 +893,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
       // Extract found documents with their mailId and updatedAt
       const foundDocs =
         result.root?.children?.map((hit: any) => ({
@@ -889,7 +914,7 @@ class VespaClient {
             docId: foundDoc?.docId ?? "",
             exists: !!foundDoc,
             updatedAt: foundDoc?.updatedAt ?? null,
-            userMap: foundDoc?.userMap as Record<string, string>
+            userMap: foundDoc?.userMap as Record<string, string>,
           }
           return acc
         },
@@ -907,7 +932,10 @@ class VespaClient {
       return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence:  ${errMessage}`, error)
+      this.logger.error(
+        `Error checking documents existence:  ${errMessage}`,
+        error,
+      )
       throw error
     }
   }
@@ -937,7 +965,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
 
       // Extract found documents with their docId and updatedAt
       const foundDocs =
@@ -964,7 +992,10 @@ class VespaClient {
       return existenceMap
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence:  ${errMessage}`, error)
+      this.logger.error(
+        `Error checking documents existence:  ${errMessage}`,
+        error,
+      )
       throw error
     }
   }
@@ -1054,13 +1085,16 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
 
       // Check if document exists
       return !!result.root?.children?.[0]
     } catch (error) {
       const errMessage = getErrorMessage(error)
-      this.logger.error(`Error checking documents existence: ${errMessage}`, error)
+      this.logger.error(
+        `Error checking documents existence: ${errMessage}`,
+        error,
+      )
       throw error
     }
   }
@@ -1140,7 +1174,7 @@ class VespaClient {
         )
       }
 
-      const data = await response.json() as any
+      const data = (await response.json()) as any
       const docs = data?.documents // Get the array of documents
 
       // Check if the documents array exists and is not empty
@@ -1202,7 +1236,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
       return result
     } catch (error) {
       const errMessage = getErrorMessage(error)
@@ -1247,7 +1281,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
 
       this.logger.info(
         `getEmailsByThreadIds - Results: ${result?.root?.children?.length || 0} emails found for threadIds: ${JSON.stringify(threadIds)}`,
@@ -1286,7 +1320,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
       return result
     } catch (error) {
       const errMessage = getErrorMessage(error)
@@ -1320,7 +1354,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json() as VespaSearchResponse
+      const result = (await response.json()) as VespaSearchResponse
       return result
     } catch (error) {
       const errMessage = getErrorMessage(error)
@@ -1337,14 +1371,13 @@ class VespaClient {
     email: string,
   ): Promise<VespaSearchResponse> {
     const yqlIds = docId.map((id) => `parentId contains '${id}'`).join(" or ")
-    let yqlQuery 
+    let yqlQuery
     if (!docId.length) {
       // "My Drive" is the special root directory name that Google Drive uses internally
       // while Ingestion we don't get the My Drive Folder , but all its children has parent Name as My Drive
       // to get the items inside My Drive we are using the regex match
       yqlQuery = `select * from sources ${schema} where (metadata contains '{\"parents\":[]}' or (metadata matches 'My Drive')) and (permissions contains '${email}' or ownerEmail contains '${email}') limit 400 `
-    }
-    else{
+    } else {
       yqlQuery = `select * from sources ${schema} where ${yqlIds} and (permissions contains '${email}' or ownerEmail contains '${email}')`
     }
     const url = `${this.vespaEndpoint}/search/`
@@ -1377,7 +1410,6 @@ class VespaClient {
       )
     }
   }
-
 }
 
 export default VespaClient
