@@ -609,7 +609,6 @@ export class VespaService {
     }> = [],
     driveIds: string[] = [],
     selectedItem: {} = {},
-    clVespaIds: string[] = [],
   ): YqlProfile => {
     // Helper function to build timestamp conditions
     const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -788,27 +787,43 @@ export class VespaService {
       )`
     }
 
-    const buildCollectionConditions = (clVespaIds: string[] = []) => {
-      const collectionIds: string[] = []
+    const buildCollectionConditions = () => {
+      let conditions: string[] = []
+      
+      // Aggregate all IDs from collectionSelections
+      const allCollectionIds: string[] = []
+      const allFolderIds: string[] = []
+      const allFileIds: string[] = []
 
       for (const selection of collectionSelections) {
         if (selection.collectionIds) {
-          collectionIds.push(...selection.collectionIds)
+          allCollectionIds.push(...selection.collectionIds)
+        }
+        if (selection.collectionFolderIds) {
+          allFolderIds.push(...selection.collectionFolderIds)
+        }
+        if (selection.collectionFileIds) {
+          allFileIds.push(...selection.collectionFileIds)
         }
       }
-      let conditions: string[] = []
 
       // Handle entire collections - use clId filter (efficient)
-      if (collectionIds.length > 0) {
-        const collectionCondition = `(${collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
+      if (allCollectionIds.length > 0) {
+        const collectionCondition = `(${allCollectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(collectionCondition)
       }
 
-      if (clVespaIds.length > 0) {
-        const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+      // Handle folder filtering - use Clfd field with clfd- prefix
+      if (allFolderIds.length > 0) {
+        const folderCondition = `(${allFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
         conditions.push(folderCondition)
       }
 
+      // Handle file filtering - use docId field (files already have clf- prefix)
+      if (allFileIds.length > 0) {
+        const fileCondition = `(${allFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+        conditions.push(fileCondition)
+      }
 
       return conditions
     }
@@ -865,20 +880,14 @@ export class VespaService {
               sources.push(dataSourceFileSchema)
             break
           case Apps.KnowledgeBase:
-            if (collectionSelections && collectionSelections.length > 0) {
-              const collectionConditions = buildCollectionConditions(clVespaIds)
-              if (collectionConditions.length > 0) {
-                const collectionQuery = buildCollectionFileYQL(collectionConditions)
-                appQueries.push(collectionQuery)
-                if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
-              } else {
-                this.logger.warn(
-                  "Apps.KnowledgeBase specified for agent, but no valid collection conditions found. Skipping KnowledgeBase search part.",
-                )
-              }
+            const collectionConditions = buildCollectionConditions()
+            if (collectionConditions.length > 0) {
+              const collectionQuery = buildCollectionFileYQL(collectionConditions)
+              appQueries.push(collectionQuery)
+              if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
             } else {
               this.logger.warn(
-                "Apps.KnowledgeBase specified for agent, but no specific collectionIds provided. Skipping generic KnowledgeBase search part.",
+                "Apps.KnowledgeBase specified for agent, but no valid collectionSelections found. Skipping KnowledgeBase search part.",
               )
             }
             break
@@ -1649,10 +1658,9 @@ export class VespaService {
       dataSourceIds = [], // Ensure dataSourceIds is destructured here
       intent = null,
       channelIds = [],
-      collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
       driveIds = [], // docIds
       selectedItem = {},
-      clVespaIds
+      collectionSelections = []
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1671,10 +1679,9 @@ export class VespaService {
       dataSourceIds, // Pass dataSourceIds here
       intent,
       channelIds,
-      collectionSelections, // Pass unified collectionSelections here
+      collectionSelections, // Pass collectionSelections in correct position
       driveIds,
-      selectedItem,
-      clVespaIds
+      selectedItem
     )
 
     const hybridDefaultPayload = {

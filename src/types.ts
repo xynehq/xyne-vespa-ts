@@ -1538,7 +1538,6 @@ export type VespaQueryConfig = {
   isDriveConnected?: boolean
   isGmailConnected?: boolean
   isCalendarConnected?: boolean
-  clVespaIds?: string[]
 }
 
 
