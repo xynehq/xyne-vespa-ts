@@ -823,7 +823,6 @@ export class VespaService {
         const fileCondition = `(${processedSelections.collectionFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(fileCondition)
       }
-      console.log("buildCollectionConditions", conditions)
       return conditions
     }
 
