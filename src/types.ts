@@ -1502,6 +1502,12 @@ export enum SearchModes {
   BoostTitle = "title_boosted_hybrid",
 }
 
+export type CollectionVespaIds = {
+  collectionIds?: string[]
+  collectionFolderIds?: string[]
+  collectionFileIds?: string[]
+}
+
 export type VespaQueryConfig = {
   limit: number
   offset: number
@@ -1523,13 +1529,13 @@ export type VespaQueryConfig = {
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> // Updated to support key-value pairs instead of prefixed strings
+  processedCollectionSelections?: CollectionVespaIds
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?: {}
   isSlackConnected?: boolean
   isDriveConnected?: boolean
   isGmailConnected?: boolean
   isCalendarConnected?: boolean
-  clVespaIds?: string[]
 }
 
 export interface GetItemsParams {

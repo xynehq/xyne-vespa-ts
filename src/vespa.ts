@@ -21,6 +21,7 @@ import {
   SlackEntity,
   chatContainerSchema,
   KbItemsSchema,
+  type CollectionVespaIds,
 } from "./types"
 import type {
   VespaAutocompleteResponse,
@@ -615,14 +616,9 @@ export class VespaService {
     dataSourceIds: string[] = [],
     intent: Intent | null = null,
     channelIds: string[] = [],
-    collectionSelections: Array<{
-      collectionIds?: string[]
-      collectionFolderIds?: string[]
-      collectionFileIds?: string[]
-    }> = [],
+    processedCollectionSelections: CollectionVespaIds = {},
     driveIds: string[] = [],
     selectedItem: {} = {},
-    clVespaIds: string[] = [],
   ): YqlProfile => {
     // Helper function to build timestamp conditions
     const buildTimestampConditions = (fromField: string, toField: string) => {
@@ -807,33 +803,28 @@ export class VespaService {
       )`
     }
 
-    const buildCollectionConditions = (clVespaIds: string[] = []) => {
-      const collectionIds: string[] = []
-
-      for (const selection of collectionSelections) {
-        if (selection.collectionIds) {
-          collectionIds.push(...selection.collectionIds)
-        }
-      }
+    const buildCollectionConditions = (processedSelections: CollectionVespaIds) => {
       let conditions: string[] = []
 
-      // Handle entire collections - use clId filter (efficient)
-      if (collectionIds.length > 0) {
-        const collectionCondition = `(${collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
+      if (processedSelections.collectionIds && processedSelections.collectionIds.length > 0) {
+        const collectionCondition = `(${processedSelections.collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(collectionCondition)
       }
 
-      if (clVespaIds.length > 0) {
-        const folderCondition = `(${clVespaIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+      if (processedSelections.collectionFolderIds && processedSelections.collectionFolderIds.length > 0) {
+        const folderCondition = `(${processedSelections.collectionFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
         conditions.push(folderCondition)
       }
 
+      if (processedSelections.collectionFileIds && processedSelections.collectionFileIds.length > 0) {
+        const fileCondition = `(${processedSelections.collectionFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+        conditions.push(fileCondition)
+      }
       return conditions
     }
 
     const buildCollectionFileYQL = (conditions: string[]) => {
       const finalCondition = `(${conditions.join(" or ")})`
-      // Collection files use clId for collections and docId for folders/files
       return `
       (
         (
@@ -883,22 +874,14 @@ export class VespaService {
               sources.push(dataSourceFileSchema)
             break
           case Apps.KnowledgeBase:
-            if (collectionSelections && collectionSelections.length > 0) {
-              const collectionConditions = buildCollectionConditions(clVespaIds)
-              if (collectionConditions.length > 0) {
-                const collectionQuery =
-                  buildCollectionFileYQL(collectionConditions)
-                appQueries.push(collectionQuery)
-                if (!sources.includes(KbItemsSchema))
-                  sources.push(KbItemsSchema)
-              } else {
-                this.logger.warn(
-                  "Apps.KnowledgeBase specified for agent, but no valid collection conditions found. Skipping KnowledgeBase search part.",
-                )
-              }
+            const collectionConditions = buildCollectionConditions(processedCollectionSelections)
+            if (collectionConditions.length > 0) {
+              const collectionQuery = buildCollectionFileYQL(collectionConditions)
+              appQueries.push(collectionQuery)
+              if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
             } else {
               this.logger.warn(
-                "Apps.KnowledgeBase specified for agent, but no specific collectionIds provided. Skipping generic KnowledgeBase search part.",
+                "Apps.KnowledgeBase specified for agent, but no valid processedCollectionSelections found. Skipping KnowledgeBase search part.",
               )
             }
             break
@@ -1678,10 +1661,9 @@ export class VespaService {
       dataSourceIds = [], // Ensure dataSourceIds is destructured here
       intent = null,
       channelIds = [],
-      collectionSelections = [], // Unified parameter for all collection selections (key-value pairs)
       driveIds = [], // docIds
       selectedItem = {},
-      clVespaIds,
+      processedCollectionSelections = {}
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1700,10 +1682,9 @@ export class VespaService {
       dataSourceIds, // Pass dataSourceIds here
       intent,
       channelIds,
-      collectionSelections, // Pass unified collectionSelections here
+      processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
-      selectedItem,
-      clVespaIds,
+      selectedItem
     )
 
     const hybridDefaultPayload = {
