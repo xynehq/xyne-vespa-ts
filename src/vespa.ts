@@ -21,6 +21,7 @@ import {
   SlackEntity,
   chatContainerSchema,
   KbItemsSchema,
+  type CollectionVespaIds,
 } from "./types"
 import type {
   VespaAutocompleteResponse,
@@ -615,11 +616,7 @@ export class VespaService {
     dataSourceIds: string[] = [],
     intent: Intent | null = null,
     channelIds: string[] = [],
-    collectionSelections: Array<{
-      collectionIds?: string[]
-      collectionFolderIds?: string[]
-      collectionFileIds?: string[]
-    }> = [],
+    processedCollectionSelections: CollectionVespaIds = {},
     driveIds: string[] = [],
     selectedItem: {} = {},
   ): YqlProfile => {
@@ -806,44 +803,27 @@ export class VespaService {
       )`
     }
 
-    const buildCollectionConditions = () => {
+    const buildCollectionConditions = (processedSelections: CollectionVespaIds) => {
       let conditions: string[] = []
-      
-      // Aggregate all IDs from collectionSelections
-      const allCollectionIds: string[] = []
-      const allFolderIds: string[] = []
-      const allFileIds: string[] = []
-
-      for (const selection of collectionSelections) {
-        if (selection.collectionIds) {
-          allCollectionIds.push(...selection.collectionIds)
-        }
-        if (selection.collectionFolderIds) {
-          allFolderIds.push(...selection.collectionFolderIds)
-        }
-        if (selection.collectionFileIds) {
-          allFileIds.push(...selection.collectionFileIds)
-        }
-      }
 
       // Handle entire collections - use clId filter (efficient)
-      if (allCollectionIds.length > 0) {
-        const collectionCondition = `(${allCollectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
+      if (processedSelections.collectionIds && processedSelections.collectionIds.length > 0) {
+        const collectionCondition = `(${processedSelections.collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(collectionCondition)
       }
 
       // Handle folder filtering - use Clfd field with clfd- prefix
-      if (allFolderIds.length > 0) {
-        const folderCondition = `(${allFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
+      if (processedSelections.collectionFolderIds && processedSelections.collectionFolderIds.length > 0) {
+        const folderCondition = `(${processedSelections.collectionFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
         conditions.push(folderCondition)
       }
 
       // Handle file filtering - use docId field (files already have clf- prefix)
-      if (allFileIds.length > 0) {
-        const fileCondition = `(${allFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
+      if (processedSelections.collectionFileIds && processedSelections.collectionFileIds.length > 0) {
+        const fileCondition = `(${processedSelections.collectionFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(fileCondition)
       }
-
+      console.log("buildCollectionConditions", conditions)
       return conditions
     }
 
@@ -899,14 +879,14 @@ export class VespaService {
               sources.push(dataSourceFileSchema)
             break
           case Apps.KnowledgeBase:
-            const collectionConditions = buildCollectionConditions()
+            const collectionConditions = buildCollectionConditions(processedCollectionSelections)
             if (collectionConditions.length > 0) {
               const collectionQuery = buildCollectionFileYQL(collectionConditions)
               appQueries.push(collectionQuery)
               if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
             } else {
               this.logger.warn(
-                "Apps.KnowledgeBase specified for agent, but no valid collectionSelections found. Skipping KnowledgeBase search part.",
+                "Apps.KnowledgeBase specified for agent, but no valid processedCollectionSelections found. Skipping KnowledgeBase search part.",
               )
             }
             break
@@ -1688,7 +1668,7 @@ export class VespaService {
       channelIds = [],
       driveIds = [], // docIds
       selectedItem = {},
-      collectionSelections = []
+      processedCollectionSelections = {}
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1707,7 +1687,7 @@ export class VespaService {
       dataSourceIds, // Pass dataSourceIds here
       intent,
       channelIds,
-      collectionSelections, // Pass collectionSelections in correct position
+      processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
       selectedItem
     )
