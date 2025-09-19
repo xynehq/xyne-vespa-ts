@@ -1502,7 +1502,6 @@ export enum SearchModes {
   BoostTitle = "title_boosted_hybrid",
 }
 
-// Type for flattened collection selection result - used by vespa package to avoid array iteration
 export type CollectionVespaIds = {
   collectionIds?: string[]
   collectionFolderIds?: string[]
@@ -1530,7 +1529,6 @@ export type VespaQueryConfig = {
     collectionFolderIds?: string[]
     collectionFileIds?: string[]
   }> // Updated to support key-value pairs instead of prefixed strings
-  // New field for processed/flattened collection selections
   processedCollectionSelections?: CollectionVespaIds
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?: {}

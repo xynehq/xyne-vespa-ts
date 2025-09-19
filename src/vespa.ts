@@ -806,19 +806,16 @@ export class VespaService {
     const buildCollectionConditions = (processedSelections: CollectionVespaIds) => {
       let conditions: string[] = []
 
-      // Handle entire collections - use clId filter (efficient)
       if (processedSelections.collectionIds && processedSelections.collectionIds.length > 0) {
         const collectionCondition = `(${processedSelections.collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(collectionCondition)
       }
 
-      // Handle folder filtering - use Clfd field with clfd- prefix
       if (processedSelections.collectionFolderIds && processedSelections.collectionFolderIds.length > 0) {
         const folderCondition = `(${processedSelections.collectionFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
         conditions.push(folderCondition)
       }
 
-      // Handle file filtering - use docId field (files already have clf- prefix)
       if (processedSelections.collectionFileIds && processedSelections.collectionFileIds.length > 0) {
         const fileCondition = `(${processedSelections.collectionFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(fileCondition)
@@ -828,7 +825,6 @@ export class VespaService {
 
     const buildCollectionFileYQL = (conditions: string[]) => {
       const finalCondition = `(${conditions.join(" or ")})`
-      // Collection files use clId for collections and docId for folders/files
       return `
       (
         (
