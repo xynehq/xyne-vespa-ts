@@ -23,7 +23,7 @@ import {
   and,
 } from "./conditions"
 import { PermissionCondition, PermissionWrapper } from "./permissions"
-import { Apps, Entity, SearchModes } from "../types"
+import { Apps, Entity, SearchModes, VespaSchema } from "../types"
 import { YqlProfile } from "./types"
 
 export class YqlBuilder {
@@ -63,7 +63,7 @@ export class YqlBuilder {
   /**
    * Set the sources for the query
    */
-  from(sources: string | string[]): this {
+  from(sources: VespaSchema | VespaSchema[]): this {
     const sourceArray = Array.isArray(sources) ? sources : [sources]
 
     if (sourceArray.length === 0) {

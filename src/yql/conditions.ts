@@ -105,13 +105,13 @@ export class VespaField extends BaseCondition {
 export class UserInput extends BaseCondition {
   constructor(
     private queryParam: string = "@query",
-    private targetHits?: number,
+    private targetHits: number,
   ) {
     super()
   }
 
   toString(): string {
-    const hitsPrefix = this.targetHits ? `{targetHits:${this.targetHits}} ` : ""
+    const hitsPrefix = `{targetHits:${this.targetHits}} `
     return `(${hitsPrefix}userInput(${this.queryParam}))`
   }
 }
@@ -123,19 +123,19 @@ export class NearestNeighbor extends BaseCondition {
   constructor(
     private field: FieldName,
     private queryParam: string = "e",
-    private targetHits?: number,
+    private targetHits: number,
   ) {
     super()
   }
 
   toString(): string {
-    const hitsPrefix = this.targetHits ? `{targetHits:${this.targetHits}} ` : ""
+    const hitsPrefix = `{targetHits:${this.targetHits}} `
     return `(${hitsPrefix}nearestNeighbor(${this.field}, ${this.queryParam}))`
   }
 }
 
 /**
- * Logical AND condition with automatic email permission checking by default
+ * Logical AND condition
  */
 export class And extends BaseCondition {
   constructor(
@@ -434,12 +434,12 @@ export const include = (field: FieldName, values: string[]): Include =>
 export const raw = (condition: string): Raw => new Raw(condition)
 export const userInput = (
   queryParam: string = "@query",
-  targetHits?: number,
+  targetHits: number,
 ): UserInput => new UserInput(queryParam, targetHits)
 export const nearestNeighbor = (
   field: FieldName,
   queryParam: string = "e",
-  targetHits?: number,
+  targetHits: number,
 ): NearestNeighbor => new NearestNeighbor(field, queryParam, targetHits)
 
 export const field = {

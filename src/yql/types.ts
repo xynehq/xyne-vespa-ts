@@ -37,7 +37,14 @@ export interface YqlBuilderOptions {
 export type FieldName = string
 export type FieldValue = string | number | boolean
 export type LogicalOperator = "and" | "or"
-export type ComparisonOperator = "contains" | ">=" | "<=" | "=" | "!=" | ">"
+export type ComparisonOperator =
+  | "contains"
+  | ">="
+  | "<="
+  | "="
+  | "=~"
+  | ">"
+  | "<"
 
 export interface SearchCondition {
   field: FieldName

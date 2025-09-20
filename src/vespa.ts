@@ -111,7 +111,7 @@ export class VespaService {
   private logger: ILogger
   private config: VespaConfig
   private vespa: VespaClient
-  private schemaSources: string[]
+  private schemaSources: VespaSchema[]
   private vespaEndpoint: string
   constructor(dependencies: VespaDependencies) {
     this.logger = dependencies.logger.child({ module: "vespa" })
@@ -380,11 +380,11 @@ export class VespaService {
     }
   }
 
-  private getAvailableSources(excludedApps?: Apps[]): string[] {
-    let sources = this.getSchemaSources().split(", ")
+  private getAvailableSources(excludedApps?: Apps[]): VespaSchema[] {
+    let sources = this.schemaSources
 
     if (excludedApps && excludedApps.length > 0) {
-      const sourcesToExclude: string[] = []
+      const sourcesToExclude: VespaSchema[] = []
 
       excludedApps.forEach((excludedApp) => {
         switch (excludedApp) {
