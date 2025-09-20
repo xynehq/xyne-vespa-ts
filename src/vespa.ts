@@ -60,6 +60,12 @@ import {
   UserInput,
   NearestNeighbor,
   VespaField,
+  or,
+  and,
+  userInput,
+  nearestNeighbor,
+  timestamp,
+  field,
 } from "./yql/conditions"
 import { PermissionCondition } from "./yql/permissions"
 import {
@@ -359,7 +365,7 @@ export class VespaService {
 
       yqlBuilder.from(availableSources)
       if (appQueries.length > 0) {
-        const combinedCondition = new Or(appQueries)
+        const combinedCondition = or(appQueries)
         yqlBuilder.where(combinedCondition.parenthesize())
       }
 
@@ -503,38 +509,36 @@ export class VespaService {
     const permissionBasedConditions = []
 
     permissionBasedConditions.push(
-      new Or([
-        new UserInput("@query", hits),
-        new NearestNeighbor("chunk_embeddings", "e", hits),
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       permissionBasedConditions.push(
-        new Timestamp("creationTime", "creationTime", timestampRange),
+        timestamp("creationTime", "creationTime", timestampRange),
       )
     }
 
     const hasAppOrEntity = !!(app || entity)
     if (!hasAppOrEntity) {
       permissionBasedConditions.push(
-        VespaField.contains("app", Apps.GoogleWorkspace),
+        field.contains("app", Apps.GoogleWorkspace),
       )
     } else {
       if (Array.isArray(app) && app.length > 0) {
-        const appConditions = app.map((a) => VespaField.contains("app", a))
-        permissionBasedConditions.push(new Or(appConditions).parenthesize())
+        const appConditions = app.map((a) => field.contains("app", a))
+        permissionBasedConditions.push(or(appConditions).parenthesize())
       } else if (app && !Array.isArray(app)) {
-        permissionBasedConditions.push(VespaField.contains("app", app))
+        permissionBasedConditions.push(field.contains("app", app))
       }
 
       if (Array.isArray(entity) && entity.length > 0) {
-        const entityConditions = entity.map((e) =>
-          VespaField.contains("entity", e),
-        )
-        permissionBasedConditions.push(new Or(entityConditions).parenthesize())
+        const entityConditions = entity.map((e) => field.contains("entity", e))
+        permissionBasedConditions.push(or(entityConditions).parenthesize())
       } else if (entity && !Array.isArray(entity)) {
-        permissionBasedConditions.push(VespaField.contains("entity", entity))
+        permissionBasedConditions.push(field.contains("entity", entity))
       }
     }
 
@@ -545,46 +549,42 @@ export class VespaService {
       }
     }
 
-    const permissionBasedQuery = new And(
-      permissionBasedConditions,
-    ).parenthesize()
+    const permissionBasedQuery = and(permissionBasedConditions).parenthesize()
 
     const ownershipBasedConditions = []
 
     ownershipBasedConditions.push(
       Or.withOwnerPermissions([
-        new UserInput("@query", hits),
-        new NearestNeighbor("chunk_embeddings", "e", hits),
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       ownershipBasedConditions.push(
-        new Timestamp("creationTime", "creationTime", timestampRange),
+        timestamp("creationTime", "creationTime", timestampRange),
       )
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => VespaField.contains("app", a))
+      const appConditions = app.map((a) => field.contains("app", a))
       ownershipBasedConditions.push(
         Or.withOwnerPermissions(appConditions).parenthesize(),
       )
     } else if (app && !Array.isArray(app)) {
-      ownershipBasedConditions.push(VespaField.contains("app", app))
+      ownershipBasedConditions.push(field.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) =>
-        VespaField.contains("entity", e),
-      )
+      const entityConditions = entity.map((e) => field.contains("entity", e))
       ownershipBasedConditions.push(
         Or.withOwnerPermissions(entityConditions).parenthesize(),
       )
     } else if (entity && !Array.isArray(entity)) {
-      ownershipBasedConditions.push(VespaField.contains("entity", entity))
+      ownershipBasedConditions.push(field.contains("entity", entity))
     }
 
-    const ownershipBasedQuery = new And(ownershipBasedConditions).parenthesize()
+    const ownershipBasedQuery = and(ownershipBasedConditions).parenthesize()
 
     return Or.withoutPermissions([permissionBasedQuery, ownershipBasedQuery])
   }
@@ -600,45 +600,43 @@ export class VespaService {
     const conditions = []
 
     conditions.push(
-      new Or([
-        new UserInput("@query", hits),
-        new NearestNeighbor("chunk_embeddings", "e", hits),
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new Timestamp("timestamp", "timestamp", timestampRange))
+      conditions.push(timestamp("timestamp", "timestamp", timestampRange))
     }
 
     if (notInMailLabels && notInMailLabels.length > 0) {
       const labelConditions = notInMailLabels
         .filter((label) => label && label.trim())
-        .map((label) => VespaField.contains("labels", label.trim()))
+        .map((label) => field.contains("labels", label.trim()))
 
       if (labelConditions.length > 0) {
         const combinedLabels =
           labelConditions.length === 1
             ? labelConditions[0]!
-            : new Or(labelConditions).parenthesize()
+            : or(labelConditions).parenthesize()
 
         conditions.push(combinedLabels.not())
       }
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => VespaField.contains("app", a))
-      conditions.push(new Or(appConditions).parenthesize())
+      const appConditions = app.map((a) => field.contains("app", a))
+      conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains("app", app))
+      conditions.push(field.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) =>
-        VespaField.contains("entity", e),
-      )
-      conditions.push(new Or(entityConditions).parenthesize())
+      const entityConditions = entity.map((e) => field.contains("entity", e))
+      conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains("entity", entity))
+      conditions.push(field.contains("entity", entity))
     }
 
     if (intent) {
@@ -648,7 +646,7 @@ export class VespaService {
       }
     }
 
-    return new And(conditions).parenthesize()
+    return and(conditions).parenthesize()
   }
 
   private buildGoogleDriveCondition(
@@ -661,30 +659,28 @@ export class VespaService {
     const conditions = []
 
     conditions.push(
-      new Or([
-        new UserInput("@query", hits),
-        new NearestNeighbor("chunk_embeddings", "e", hits),
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new Timestamp("updatedAt", "updatedAt", timestampRange))
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => VespaField.contains("app", a))
-      conditions.push(new Or(appConditions).parenthesize())
+      const appConditions = app.map((a) => field.contains("app", a))
+      conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains("app", app))
+      conditions.push(field.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) =>
-        VespaField.contains("entity", e),
-      )
-      conditions.push(new Or(entityConditions).parenthesize())
+      const entityConditions = entity.map((e) => field.contains("entity", e))
+      conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains("entity", entity))
+      conditions.push(field.contains("entity", entity))
     }
 
     if (intent) {
@@ -694,7 +690,7 @@ export class VespaService {
       }
     }
 
-    return new And(conditions).parenthesize()
+    return and(conditions).parenthesize()
   }
 
   private buildGoogleCalendarCondition(
@@ -707,30 +703,28 @@ export class VespaService {
     const conditions = []
 
     conditions.push(
-      new Or([
-        new UserInput("@query", hits),
-        new NearestNeighbor("chunk_embeddings", "e", hits),
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new Timestamp("startTime", "startTime", timestampRange))
+      conditions.push(timestamp("startTime", "startTime", timestampRange))
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => VespaField.contains("app", a))
-      conditions.push(new Or(appConditions).parenthesize())
+      const appConditions = app.map((a) => field.contains("app", a))
+      conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains("app", app))
+      conditions.push(field.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) =>
-        VespaField.contains("entity", e),
-      )
-      conditions.push(new Or(entityConditions).parenthesize())
+      const entityConditions = entity.map((e) => field.contains("entity", e))
+      conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains("entity", entity))
+      conditions.push(field.contains("entity", entity))
     }
 
     if (intent) {
@@ -740,7 +734,7 @@ export class VespaService {
       }
     }
 
-    return new And(conditions).parenthesize()
+    return and(conditions).parenthesize()
   }
 
   private buildSlackCondition(
@@ -752,33 +746,31 @@ export class VespaService {
     const conditions = []
 
     conditions.push(
-      new Or([
-        new UserInput("@query", hits),
-        new NearestNeighbor("text_embeddings", "e", hits),
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new Timestamp("updatedAt", "updatedAt", timestampRange))
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => VespaField.contains("app", a))
-      conditions.push(new Or(appConditions).parenthesize())
+      const appConditions = app.map((a) => field.contains("app", a))
+      conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains("app", app))
+      conditions.push(field.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) =>
-        VespaField.contains("entity", e),
-      )
-      conditions.push(new Or(entityConditions).parenthesize())
+      const entityConditions = entity.map((e) => field.contains("entity", e))
+      conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains("entity", entity))
+      conditions.push(field.contains("entity", entity))
     }
 
-    return new And(conditions).parenthesize()
+    return and(conditions).parenthesize()
   }
 
   private buildDefaultCondition(
@@ -791,30 +783,28 @@ export class VespaService {
     const conditions = []
 
     conditions.push(
-      new Or([
-        new UserInput("@query", hits),
-        new NearestNeighbor("chunk_embeddings", "e", hits),
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ]).parenthesize(),
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(new Timestamp("updatedAt", "updatedAt", timestampRange))
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => VespaField.contains("app", a))
-      conditions.push(new Or(appConditions).parenthesize())
+      const appConditions = app.map((a) => field.contains("app", a))
+      conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(VespaField.contains("app", app))
+      conditions.push(field.contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) =>
-        VespaField.contains("entity", e),
-      )
-      conditions.push(new Or(entityConditions).parenthesize())
+      const entityConditions = entity.map((e) => field.contains("entity", e))
+      conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(VespaField.contains("entity", entity))
+      conditions.push(field.contains("entity", entity))
     }
 
     if (intent) {
@@ -824,7 +814,7 @@ export class VespaService {
       }
     }
 
-    return new And(conditions).parenthesize()
+    return and(conditions).parenthesize()
   }
 
   private buildIntentConditionFromIntent(intent: Intent) {
@@ -832,39 +822,35 @@ export class VespaService {
 
     if (intent.from && intent.from.length > 0) {
       const fromConditions = intent.from.map((from) =>
-        VespaField.contains("from", from),
+        field.contains("from", from),
       )
       intentConditions.push(
-        fromConditions.length === 1
-          ? fromConditions[0]!
-          : new Or(fromConditions),
+        fromConditions.length === 1 ? fromConditions[0]! : or(fromConditions),
       )
     }
 
     if (intent.to && intent.to.length > 0) {
-      const toConditions = intent.to.map((to) => VespaField.contains("to", to))
+      const toConditions = intent.to.map((to) => field.contains("to", to))
       intentConditions.push(
-        toConditions.length === 1 ? toConditions[0]! : new Or(toConditions),
+        toConditions.length === 1 ? toConditions[0]! : or(toConditions),
       )
     }
 
     if (intent.cc && intent.cc.length > 0) {
-      const ccConditions = intent.cc.map((cc) => VespaField.contains("cc", cc))
+      const ccConditions = intent.cc.map((cc) => field.contains("cc", cc))
       intentConditions.push(
-        ccConditions.length === 1 ? ccConditions[0]! : new Or(ccConditions),
+        ccConditions.length === 1 ? ccConditions[0]! : or(ccConditions),
       )
     }
 
     if (intent.bcc && intent.bcc.length > 0) {
-      const bccConditions = intent.bcc.map((bcc) =>
-        VespaField.contains("bcc", bcc),
-      )
+      const bccConditions = intent.bcc.map((bcc) => field.contains("bcc", bcc))
       intentConditions.push(
-        bccConditions.length === 1 ? bccConditions[0]! : new Or(bccConditions),
+        bccConditions.length === 1 ? bccConditions[0]! : or(bccConditions),
       )
     }
 
-    return intentConditions.length > 0 ? new And(intentConditions) : null
+    return intentConditions.length > 0 ? and(intentConditions) : null
   }
   // Helper function to build intent filter
   buildIntentFilter = (intent: Intent | null) => {

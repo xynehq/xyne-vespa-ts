@@ -418,18 +418,41 @@ export class Raw extends BaseCondition {
   }
 }
 
-// Backward compatibility aliases
-export const AndCondition = And
-export const OrCondition = Or
-export const NotCondition = Not
-export const ParenthesizedCondition = Parenthesized
-export const TimestampCondition = Timestamp
-export const ExclusionCondition = Exclude
-export const InclusionCondition = Include
-export const RawCondition = Raw
-export const UserInputCondition = UserInput
-export const NearestNeighborCondition = NearestNeighbor
+export const and = (conditions: YqlCondition[]): And => new And(conditions)
+export const or = (conditions: YqlCondition[]): Or => new Or(conditions)
+export const not = (condition: YqlCondition): Not => new Not(condition)
+export const parenthesize = (condition: YqlCondition): Parenthesized =>
+  new Parenthesized(condition)
+export const timestamp = (
+  fromField: FieldName,
+  toField: FieldName,
+  range: TimestampRange,
+): Timestamp => new Timestamp(fromField, toField, range)
+export const exclude = (docIds: string[]): Exclude => new Exclude(docIds)
+export const include = (field: FieldName, values: string[]): Include =>
+  new Include(field, values)
+export const raw = (condition: string): Raw => new Raw(condition)
+export const userInput = (
+  queryParam: string = "@query",
+  targetHits?: number,
+): UserInput => new UserInput(queryParam, targetHits)
+export const nearestNeighbor = (
+  field: FieldName,
+  queryParam: string = "e",
+  targetHits?: number,
+): NearestNeighbor => new NearestNeighbor(field, queryParam, targetHits)
 
-// Additional aliases for the new names
-export const Exclusion = Exclude
-export const Inclusion = Include
+export const field = {
+  contains: (field: FieldName, value: FieldValue): VespaField =>
+    VespaField.contains(field, value),
+  equals: (field: FieldName, value: FieldValue): VespaField =>
+    VespaField.equals(field, value),
+  greaterThan: (field: FieldName, value: FieldValue): VespaField =>
+    VespaField.greaterThan(field, value),
+  greaterThanOrEqual: (field: FieldName, value: FieldValue): VespaField =>
+    VespaField.greaterThanOrEqual(field, value),
+  lessThan: (field: FieldName, value: FieldValue): VespaField =>
+    VespaField.lessThan(field, value),
+  lessThanOrEqual: (field: FieldName, value: FieldValue): VespaField =>
+    VespaField.lessThanOrEqual(field, value),
+}

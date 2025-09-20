@@ -1,5 +1,5 @@
 import { YqlCondition, PermissionFilter, PermissionFieldType } from "./types"
-import { BaseCondition, VespaField, Or, And } from "./conditions"
+import { BaseCondition, VespaField, Or, And, and } from "./conditions"
 
 export class PermissionCondition extends BaseCondition {
   constructor(
@@ -68,7 +68,7 @@ export class PermissionWrapper {
     const permissionCondition = PermissionCondition.EmailPermissions(
       this.userEmail,
     )
-    return new And([condition, permissionCondition])
+    return and([condition, permissionCondition])
   }
 
   wrapEmailOwner(
@@ -80,6 +80,6 @@ export class PermissionWrapper {
     }
 
     const permissionCondition = PermissionCondition.EmailOwner(this.userEmail)
-    return new And([condition, permissionCondition])
+    return and([condition, permissionCondition])
   }
 }
