@@ -38,18 +38,19 @@ export interface YqlBuilderOptions {
 export type FieldName = string
 export type FieldValue = string | number | boolean
 export type LogicalOperator = "and" | "or"
-export type ComparisonOperator =
-  | "contains"
-  | ">="
-  | "<="
-  | "="
-  | "=~"
-  | ">"
-  | "<"
+export enum Operator {
+  CONTAINS = "contains",
+  GREATER_THAN_OR_EQUAL = ">=",
+  LESS_THAN_OR_EQUAL = "<=",
+  EQUAL = "=",
+  SUBSTRING_MATCH = "=~",
+  GREATER_THAN = ">",
+  LESS_THAN = "<",
+}
 
 export interface SearchCondition {
   field: FieldName
-  operator: ComparisonOperator
+  operator: Operator
   value: FieldValue
 }
 

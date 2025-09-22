@@ -7,6 +7,7 @@ import {
   FieldName,
   FieldValue,
   PermissionFieldType,
+  Operator,
 } from "./types"
 
 /**
@@ -76,27 +77,27 @@ export class VespaField extends BaseCondition {
   }
 
   static contains(field: FieldName, value: FieldValue): VespaField {
-    return new VespaField(field, "contains", value)
+    return new VespaField(field, Operator.CONTAINS, value)
   }
 
   static equals(field: FieldName, value: FieldValue): VespaField {
-    return new VespaField(field, "=", value)
+    return new VespaField(field, Operator.EQUAL, value)
   }
 
   static greaterThan(field: FieldName, value: FieldValue): VespaField {
-    return new VespaField(field, ">", value)
+    return new VespaField(field, Operator.GREATER_THAN, value)
   }
 
   static greaterThanOrEqual(field: FieldName, value: FieldValue): VespaField {
-    return new VespaField(field, ">=", value)
+    return new VespaField(field, Operator.GREATER_THAN_OR_EQUAL, value)
   }
 
   static lessThan(field: FieldName, value: FieldValue): VespaField {
-    return new VespaField(field, "<", value)
+    return new VespaField(field, Operator.LESS_THAN, value)
   }
 
   static lessThanOrEqual(field: FieldName, value: FieldValue): VespaField {
-    return new VespaField(field, "<=", value)
+    return new VespaField(field, Operator.LESS_THAN_OR_EQUAL, value)
   }
 }
 
@@ -326,11 +327,15 @@ export class Timestamp extends BaseCondition {
     const conditions: string[] = []
 
     if (this.range.from !== null && this.range.from !== undefined) {
-      conditions.push(`${this.fromField} >= ${this.range.from}`)
+      conditions.push(
+        `${this.fromField} ${Operator.GREATER_THAN_OR_EQUAL} ${this.range.from}`,
+      )
     }
 
     if (this.range.to !== null && this.range.to !== undefined) {
-      conditions.push(`${this.toField} <= ${this.range.to}`)
+      conditions.push(
+        `${this.toField} ${Operator.LESS_THAN_OR_EQUAL} ${this.range.to}`,
+      )
     }
 
     if (conditions.length === 0) {
@@ -356,7 +361,7 @@ export class Exclude extends BaseCondition {
 
     const conditions = this.docIds
       .filter((id) => id && id.trim())
-      .map((id) => `docId contains '${escapeYqlValue(id.trim())}'`)
+      .map((id) => `docId ${Operator.CONTAINS} '${escapeYqlValue(id.trim())}'`)
 
     if (conditions.length === 0) {
       return ""
@@ -393,7 +398,8 @@ export class Include extends BaseCondition {
     const conditions = this.values
       .filter((value) => value && value.trim())
       .map(
-        (value) => `${this.field} contains '${escapeYqlValue(value.trim())}'`,
+        (value) =>
+          `${this.field} ${Operator.CONTAINS} '${escapeYqlValue(value.trim())}'`,
       )
 
     if (conditions.length === 0) {
