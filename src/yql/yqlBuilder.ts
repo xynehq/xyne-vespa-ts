@@ -94,7 +94,7 @@ export class YqlBuilder {
    */
   whereAnd(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(and(conditions))
+      this.whereConditions.push(and(conditions, true).parenthesize())
     }
     return this
   }
@@ -104,7 +104,7 @@ export class YqlBuilder {
    */
   whereOr(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(or(conditions))
+      this.whereConditions.push(or(conditions).parenthesize())
     }
     return this
   }
@@ -157,7 +157,7 @@ export class YqlBuilder {
       (range.from !== null && range.from !== undefined) ||
       (range.to !== null && range.to !== undefined)
     ) {
-      return this.where(new Timestamp(fromField, toField, range))
+      return this.where(new Timestamp(fromField, toField, range).parenthesize())
     }
     return this
   }
@@ -314,7 +314,7 @@ export class YqlBuilder {
           ? this.whereConditions[0]!
           : and(this.whereConditions)
 
-      yql += ` where ${combinedConditions.toString()}`
+      yql += ` where (${combinedConditions.toString()})`
     }
 
     // Add other clauses

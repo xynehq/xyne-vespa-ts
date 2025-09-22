@@ -24,6 +24,7 @@ export function escapeYqlValue(value: string | number | boolean): string {
  * Base class for all YQL conditions
  */
 export abstract class BaseCondition implements YqlCondition {
+  readonly __brand: "YqlCondition" = "YqlCondition"
   abstract toString(): string
 
   and(other: YqlCondition): And {
@@ -142,9 +143,7 @@ export class And extends BaseCondition {
     private conditions: YqlCondition[],
     private requirePermissions: boolean = false,
     private userEmail: string = "@email",
-    private permissionType:
-      | PermissionFieldType
-      | PermissionFieldType.OWNER = PermissionFieldType.PERMISSIONS,
+    private permissionType: PermissionFieldType = PermissionFieldType.BOTH,
   ) {
     super()
     if (conditions.length === 0) {
@@ -156,11 +155,17 @@ export class And extends BaseCondition {
     const andCondition = this.conditions.map((c) => c.toString()).join(" and ")
 
     if (this.requirePermissions) {
+      if (this.permissionType === PermissionFieldType.BOTH) {
+        return `(${andCondition}) and (
+                ${PermissionFieldType.OWNER} contains ${this.userEmail} or 
+                ${PermissionFieldType.PERMISSIONS} contains ${this.userEmail}
+                )`
+      }
       const permissionField =
         this.permissionType === PermissionFieldType.OWNER
           ? PermissionFieldType.OWNER
           : PermissionFieldType.PERMISSIONS
-      return `${andCondition} and ${permissionField} contains ${this.userEmail}`
+      return `(${andCondition}) and ${permissionField} contains ${this.userEmail}`
     }
 
     return andCondition
@@ -418,7 +423,10 @@ export class Raw extends BaseCondition {
   }
 }
 
-export const and = (conditions: YqlCondition[]): And => new And(conditions)
+export const and = (
+  conditions: YqlCondition[],
+  requirePermissions = false,
+): And => new And(conditions, requirePermissions)
 export const or = (conditions: YqlCondition[]): Or => new Or(conditions)
 export const not = (condition: YqlCondition): Not => new Not(condition)
 export const parenthesize = (condition: YqlCondition): Parenthesized =>

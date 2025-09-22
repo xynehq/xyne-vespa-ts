@@ -517,7 +517,11 @@ export class VespaService {
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       permissionBasedConditions.push(
-        timestamp("creationTime", "creationTime", timestampRange),
+        timestamp(
+          "creationTime",
+          "creationTime",
+          timestampRange,
+        ).parenthesize(),
       )
     }
 

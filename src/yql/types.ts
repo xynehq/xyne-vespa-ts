@@ -1,6 +1,7 @@
 import { SearchModes } from "../types"
 
 export interface YqlCondition {
+  readonly __brand: "YqlCondition"
   toString(): string
 }
 
