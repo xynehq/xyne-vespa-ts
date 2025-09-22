@@ -670,7 +670,9 @@ export class VespaService {
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+      conditions.push(
+        timestamp("updatedAt", "updatedAt", timestampRange).parenthesize(),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
@@ -757,7 +759,9 @@ export class VespaService {
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+      conditions.push(
+        timestamp("updatedAt", "updatedAt", timestampRange).parenthesize(),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
@@ -794,7 +798,9 @@ export class VespaService {
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+      conditions.push(
+        timestamp("updatedAt", "updatedAt", timestampRange).parenthesize(),
+      )
     }
 
     if (Array.isArray(app) && app.length > 0) {
