@@ -13,46 +13,59 @@ import {
 } from "./conditions"
 import { FieldName, FieldValue, TimestampRange, YqlCondition } from "./types"
 
-export const and = (
-  conditions: YqlCondition[],
-  requirePermissions = false,
-): And => new And(conditions, requirePermissions)
-export const or = (conditions: YqlCondition[]): Or => new Or(conditions)
-export const not = (condition: YqlCondition): Not => new Not(condition)
-export const parenthesize = (condition: YqlCondition): Parenthesized =>
+const and = (conditions: YqlCondition[], requirePermissions = false): And =>
+  new And(conditions, requirePermissions)
+const or = (conditions: YqlCondition[]): Or => new Or(conditions)
+const not = (condition: YqlCondition): Not => new Not(condition)
+const parenthesize = (condition: YqlCondition): Parenthesized =>
   new Parenthesized(condition)
-export const timestamp = (
+const timestamp = (
   fromField: FieldName,
   toField: FieldName,
   range: TimestampRange,
 ): Timestamp => new Timestamp(fromField, toField, range)
-export const exclude = (docIds: string[]): Exclude => new Exclude(docIds)
-export const include = (field: FieldName, values: string[]): Include =>
+const exclude = (docIds: string[]): Exclude => new Exclude(docIds)
+const include = (field: FieldName, values: string[]): Include =>
   new Include(field, values)
-export const raw = (condition: string): Raw => new Raw(condition)
-export const userInput = (
+const raw = (condition: string): Raw => new Raw(condition)
+const userInput = (
   queryParam: string = "@query",
   targetHits: number,
 ): UserInput => new UserInput(queryParam, targetHits)
-export const nearestNeighbor = (
+const nearestNeighbor = (
   field: FieldName,
   queryParam: string = "e",
   targetHits: number,
 ): NearestNeighbor => new NearestNeighbor(field, queryParam, targetHits)
 
-export const contains = (field: FieldName, value: FieldValue): VespaField =>
+const contains = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.contains(field, value)
-export const equals = (field: FieldName, value: FieldValue): VespaField =>
+const equals = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.equals(field, value)
-export const greaterThan = (field: FieldName, value: FieldValue): VespaField =>
+const greaterThan = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.greaterThan(field, value)
-export const greaterThanOrEqual = (
-  field: FieldName,
-  value: FieldValue,
-): VespaField => VespaField.greaterThanOrEqual(field, value)
-export const lessThan = (field: FieldName, value: FieldValue): VespaField =>
+const greaterThanOrEqual = (field: FieldName, value: FieldValue): VespaField =>
+  VespaField.greaterThanOrEqual(field, value)
+const lessThan = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.lessThan(field, value)
-export const lessThanOrEqual = (
-  field: FieldName,
-  value: FieldValue,
-): VespaField => VespaField.lessThanOrEqual(field, value)
+const lessThanOrEqual = (field: FieldName, value: FieldValue): VespaField =>
+  VespaField.lessThanOrEqual(field, value)
+
+export {
+  and,
+  or,
+  not,
+  parenthesize,
+  timestamp,
+  exclude,
+  include,
+  raw,
+  userInput,
+  nearestNeighbor,
+  contains,
+  equals,
+  greaterThan,
+  greaterThanOrEqual,
+  lessThan,
+  lessThanOrEqual,
+}
