@@ -2908,7 +2908,7 @@ export class VespaService {
       )
       ${docIdFilter}
       ${parentDocIdFilter}
-    ) limit ${limit}`
+    )`
 
     const searchPayload = {
       yql: yqlQuery,
