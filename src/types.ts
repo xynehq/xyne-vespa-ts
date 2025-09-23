@@ -65,6 +65,7 @@ export enum Apps {
   MicrosoftDrive = "microsoft-drive",
   MicrosoftOutlook = "microsoft-outlook",
   MicrosoftCalendar = "microsoft-calendar",
+  MicrosoftSharepoint = "microsoft-sharepoint"
 }
 
 export enum WebSearchEntity {
