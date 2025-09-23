@@ -52,7 +52,6 @@ import {
   getErrorMessage,
   processGmailIntent,
 } from "./utils"
-import { Timestamp } from "./yql/conditions"
 import { YqlBuilder } from "./yql/yqlBuilder"
 import {
   Or,
@@ -60,13 +59,8 @@ import {
   UserInput,
   NearestNeighbor,
   VespaField,
-  or,
-  and,
-  userInput,
-  nearestNeighbor,
-  timestamp,
-  field,
 } from "./yql/conditions"
+import { or, and, userInput, nearestNeighbor, timestamp, contains } from "./yql"
 import { PermissionCondition } from "./yql/permissions"
 import {
   ErrorDeletingDocuments,
@@ -527,22 +521,20 @@ export class VespaService {
 
     const hasAppOrEntity = !!(app || entity)
     if (!hasAppOrEntity) {
-      permissionBasedConditions.push(
-        field.contains("app", Apps.GoogleWorkspace),
-      )
+      permissionBasedConditions.push(contains("app", Apps.GoogleWorkspace))
     } else {
       if (Array.isArray(app) && app.length > 0) {
-        const appConditions = app.map((a) => field.contains("app", a))
+        const appConditions = app.map((a) => contains("app", a))
         permissionBasedConditions.push(or(appConditions).parenthesize())
       } else if (app && !Array.isArray(app)) {
-        permissionBasedConditions.push(field.contains("app", app))
+        permissionBasedConditions.push(contains("app", app))
       }
 
       if (Array.isArray(entity) && entity.length > 0) {
-        const entityConditions = entity.map((e) => field.contains("entity", e))
+        const entityConditions = entity.map((e) => contains("entity", e))
         permissionBasedConditions.push(or(entityConditions).parenthesize())
       } else if (entity && !Array.isArray(entity)) {
-        permissionBasedConditions.push(field.contains("entity", entity))
+        permissionBasedConditions.push(contains("entity", entity))
       }
     }
 
@@ -571,21 +563,21 @@ export class VespaService {
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => field.contains("app", a))
+      const appConditions = app.map((a) => contains("app", a))
       ownershipBasedConditions.push(
         Or.withOwnerPermissions(appConditions).parenthesize(),
       )
     } else if (app && !Array.isArray(app)) {
-      ownershipBasedConditions.push(field.contains("app", app))
+      ownershipBasedConditions.push(contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => field.contains("entity", e))
+      const entityConditions = entity.map((e) => contains("entity", e))
       ownershipBasedConditions.push(
         Or.withOwnerPermissions(entityConditions).parenthesize(),
       )
     } else if (entity && !Array.isArray(entity)) {
-      ownershipBasedConditions.push(field.contains("entity", entity))
+      ownershipBasedConditions.push(contains("entity", entity))
     }
 
     const ownershipBasedQuery = and(ownershipBasedConditions).parenthesize()
@@ -617,7 +609,7 @@ export class VespaService {
     if (notInMailLabels && notInMailLabels.length > 0) {
       const labelConditions = notInMailLabels
         .filter((label) => label && label.trim())
-        .map((label) => field.contains("labels", label.trim()))
+        .map((label) => contains("labels", label.trim()))
 
       if (labelConditions.length > 0) {
         const combinedLabels =
@@ -630,17 +622,17 @@ export class VespaService {
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => field.contains("app", a))
+      const appConditions = app.map((a) => contains("app", a))
       conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(field.contains("app", app))
+      conditions.push(contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => field.contains("entity", e))
+      const entityConditions = entity.map((e) => contains("entity", e))
       conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(field.contains("entity", entity))
+      conditions.push(contains("entity", entity))
     }
 
     if (intent) {
@@ -676,17 +668,17 @@ export class VespaService {
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => field.contains("app", a))
+      const appConditions = app.map((a) => contains("app", a))
       conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(field.contains("app", app))
+      conditions.push(contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => field.contains("entity", e))
+      const entityConditions = entity.map((e) => contains("entity", e))
       conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(field.contains("entity", entity))
+      conditions.push(contains("entity", entity))
     }
 
     if (intent) {
@@ -720,17 +712,17 @@ export class VespaService {
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => field.contains("app", a))
+      const appConditions = app.map((a) => contains("app", a))
       conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(field.contains("app", app))
+      conditions.push(contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => field.contains("entity", e))
+      const entityConditions = entity.map((e) => contains("entity", e))
       conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(field.contains("entity", entity))
+      conditions.push(contains("entity", entity))
     }
 
     if (intent) {
@@ -765,17 +757,17 @@ export class VespaService {
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => field.contains("app", a))
+      const appConditions = app.map((a) => contains("app", a))
       conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(field.contains("app", app))
+      conditions.push(contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => field.contains("entity", e))
+      const entityConditions = entity.map((e) => contains("entity", e))
       conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(field.contains("entity", entity))
+      conditions.push(contains("entity", entity))
     }
 
     return and(conditions).parenthesize()
@@ -804,17 +796,17 @@ export class VespaService {
     }
 
     if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => field.contains("app", a))
+      const appConditions = app.map((a) => contains("app", a))
       conditions.push(or(appConditions).parenthesize())
     } else if (app && !Array.isArray(app)) {
-      conditions.push(field.contains("app", app))
+      conditions.push(contains("app", app))
     }
 
     if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => field.contains("entity", e))
+      const entityConditions = entity.map((e) => contains("entity", e))
       conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
-      conditions.push(field.contains("entity", entity))
+      conditions.push(contains("entity", entity))
     }
 
     if (intent) {
@@ -831,30 +823,28 @@ export class VespaService {
     const intentConditions = []
 
     if (intent.from && intent.from.length > 0) {
-      const fromConditions = intent.from.map((from) =>
-        field.contains("from", from),
-      )
+      const fromConditions = intent.from.map((from) => contains("from", from))
       intentConditions.push(
         fromConditions.length === 1 ? fromConditions[0]! : or(fromConditions),
       )
     }
 
     if (intent.to && intent.to.length > 0) {
-      const toConditions = intent.to.map((to) => field.contains("to", to))
+      const toConditions = intent.to.map((to) => contains("to", to))
       intentConditions.push(
         toConditions.length === 1 ? toConditions[0]! : or(toConditions),
       )
     }
 
     if (intent.cc && intent.cc.length > 0) {
-      const ccConditions = intent.cc.map((cc) => field.contains("cc", cc))
+      const ccConditions = intent.cc.map((cc) => contains("cc", cc))
       intentConditions.push(
         ccConditions.length === 1 ? ccConditions[0]! : or(ccConditions),
       )
     }
 
     if (intent.bcc && intent.bcc.length > 0) {
-      const bccConditions = intent.bcc.map((bcc) => field.contains("bcc", bcc))
+      const bccConditions = intent.bcc.map((bcc) => contains("bcc", bcc))
       intentConditions.push(
         bccConditions.length === 1 ? bccConditions[0]! : or(bccConditions),
       )

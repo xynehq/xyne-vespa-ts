@@ -16,12 +16,8 @@ import {
   Exclude,
   Include,
   escapeYqlValue,
-  or,
-  field,
-  exclude,
-  include,
-  and,
 } from "./conditions"
+import { or, exclude, include, and, contains } from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
 import { Apps, Entity, SearchModes, VespaSchema } from "../types"
 import { YqlProfile } from "./types"
@@ -169,9 +165,9 @@ export class YqlBuilder {
     const apps = Array.isArray(app) ? app : [app]
 
     if (apps.length === 1) {
-      return this.where(field.contains("app", apps[0]!))
+      return this.where(contains("app", apps[0]!))
     } else if (apps.length > 1) {
-      const conditions = apps.map((a) => field.contains("app", a))
+      const conditions = apps.map((a) => contains("app", a))
       return this.where(or(conditions).parenthesize())
     }
 
@@ -185,9 +181,9 @@ export class YqlBuilder {
     const entities = Array.isArray(entity) ? entity : [entity]
 
     if (entities.length === 1) {
-      return this.where(field.contains("entity", entities[0]!))
+      return this.where(contains("entity", entities[0]!))
     } else if (entities.length > 1) {
-      const conditions = entities.map((e) => field.contains("entity", e))
+      const conditions = entities.map((e) => contains("entity", e))
       return this.where(or(conditions).parenthesize())
     }
 
@@ -237,7 +233,7 @@ export class YqlBuilder {
 
     const labelConditions = labels
       .filter((label) => label && label.trim())
-      .map((label) => field.contains("labels", label.trim()))
+      .map((label) => contains("labels", label.trim()))
 
     if (labelConditions.length > 0) {
       const combinedLabels =

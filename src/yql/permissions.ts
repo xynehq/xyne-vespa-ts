@@ -1,5 +1,6 @@
 import { YqlCondition, PermissionFilter, PermissionFieldType } from "./types"
-import { BaseCondition, VespaField, Or, And, and } from "./conditions"
+import { BaseCondition, VespaField, Or, And } from "./conditions"
+import { and } from "."
 
 export class PermissionCondition extends BaseCondition {
   constructor(
