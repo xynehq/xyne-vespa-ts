@@ -2876,22 +2876,10 @@ export class VespaService {
   ): Promise<VespaSearchResponse> => {
     if (!query || query.trim().length === 0) {
       this.logger.warn("searchCollectionRAG called with empty query")
-      return {
-        root: {
-          id: "empty",
-          relevance: 0,
-          fields: { totalCount: 0 },
-          coverage: {
-            coverage: 0,
-            documents: 0,
-            full: true,
-            nodes: 0,
-            results: 0,
-            resultsFull: 0,
-          },
-          children: [],
-        },
-      }
+      throw new ErrorPerformingSearch({
+        cause: new Error("empty query string"),
+        sources: KbItemsSchema,
+      })
     }
 
     // Build optional docId filtering conditions
@@ -2920,7 +2908,7 @@ export class VespaService {
       )
       ${docIdFilter}
       ${parentDocIdFilter}
-    ) limit ${limit} offset ${offset}`
+    ) limit ${limit}`
 
     const searchPayload = {
       yql: yqlQuery,
@@ -2931,13 +2919,11 @@ export class VespaService {
       hits: limit,
       offset,
       timeout: "30s",
-      maxHits: limit * 2, // Allow more candidates for better ranking
     }
 
 
     try {
       const response = await this.vespa.search<VespaSearchResponse>(searchPayload)
-      // console.log(response)
       this.logger.info(`[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${query.trim()}"`)
       
       return response
