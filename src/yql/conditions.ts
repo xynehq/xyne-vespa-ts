@@ -339,7 +339,9 @@ export class Timestamp extends BaseCondition {
     }
 
     if (conditions.length === 0) {
-      throw new Error("Timestamp range must have at least from or to value")
+      throw new Error(
+        "Timestamp range condition requires at least one valid timestamp",
+      )
     }
 
     return conditions.join(" and ")

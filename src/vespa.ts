@@ -538,13 +538,6 @@ export class VespaService {
       }
     }
 
-    if (intent) {
-      const intentCondition = this.buildIntentConditionFromIntent(intent)
-      if (intentCondition) {
-        permissionBasedConditions.push(intentCondition)
-      }
-    }
-
     const permissionBasedQuery = and(permissionBasedConditions).parenthesize()
 
     const ownershipBasedConditions = []
@@ -681,13 +674,6 @@ export class VespaService {
       conditions.push(contains("entity", entity))
     }
 
-    if (intent) {
-      const intentCondition = this.buildIntentConditionFromIntent(intent)
-      if (intentCondition) {
-        conditions.push(intentCondition)
-      }
-    }
-
     return and(conditions).parenthesize()
   }
 
@@ -723,13 +709,6 @@ export class VespaService {
       conditions.push(or(entityConditions).parenthesize())
     } else if (entity && !Array.isArray(entity)) {
       conditions.push(contains("entity", entity))
-    }
-
-    if (intent) {
-      const intentCondition = this.buildIntentConditionFromIntent(intent)
-      if (intentCondition) {
-        conditions.push(intentCondition)
-      }
     }
 
     return and(conditions).parenthesize()
@@ -809,13 +788,6 @@ export class VespaService {
       conditions.push(contains("entity", entity))
     }
 
-    if (intent) {
-      const intentCondition = this.buildIntentConditionFromIntent(intent)
-      if (intentCondition) {
-        conditions.push(intentCondition)
-      }
-    }
-
     return and(conditions).parenthesize()
   }
 
@@ -850,7 +822,9 @@ export class VespaService {
       )
     }
 
-    return intentConditions.length > 0 ? and(intentConditions) : null
+    return intentConditions.length > 0
+      ? and(intentConditions).parenthesize()
+      : null
   }
   // Helper function to build intent filter
   buildIntentFilter = (intent: Intent | null) => {
