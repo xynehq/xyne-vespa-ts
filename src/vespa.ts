@@ -1,7 +1,5 @@
 import {
   Apps,
-  CalendarEntity,
-  DriveEntity,
   eventSchema,
   MailEntity,
   fileSchema,
@@ -34,12 +32,7 @@ import type {
   VespaEvent,
   VespaUserQueryHistory,
   VespaSchema,
-  VespaMailAttachment,
-  VespaChatContainer,
   Inserts,
-  VespaChatUserSearchSchema,
-  VespaSearchResults,
-  ChatUserCore,
   VespaQueryConfig,
   GetItemsParams,
   GetThreadItemsParams,
@@ -53,15 +46,8 @@ import {
   processGmailIntent,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
-import {
-  Or,
-  And,
-  UserInput,
-  NearestNeighbor,
-  VespaField,
-} from "./yql/conditions"
+import { Or } from "./yql/conditions"
 import { or, and, userInput, nearestNeighbor, timestamp, contains } from "./yql"
-import { PermissionCondition } from "./yql/permissions"
 import {
   ErrorDeletingDocuments,
   ErrorRetrievingDocuments,
@@ -72,7 +58,6 @@ import crypto from "crypto"
 import VespaClient from "./client/vespaClient"
 import pLimit from "p-limit"
 import type { ILogger, VespaConfig, VespaDependencies } from "./types"
-import { is } from "zod/locales"
 
 type YqlProfile = {
   profile: SearchModes
