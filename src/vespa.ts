@@ -348,10 +348,17 @@ export class VespaService {
         yqlBuilder.where(combinedCondition.parenthesize())
       }
 
+      if (app !== null && app !== undefined) {
+        yqlBuilder.filterByApp(app)
+      }
+
+      if (entity !== null && entity !== undefined) {
+        yqlBuilder.filterByEntity(entity)
+      }
+
       if (excludedIds && excludedIds.length > 0) {
         yqlBuilder.excludeDocIds(excludedIds)
       }
-
       return yqlBuilder.buildProfile(profile)
     } catch (error) {
       this.logger.error(`Failed to build YQL profile:`, error)
@@ -407,72 +414,46 @@ export class VespaService {
   ) {
     const appConditions = []
 
-    for (const includedApp of includedApps) {
-      let appCondition = null
+    if (includedApps.length === 0) {
+      return [
+        this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
+      ]
+    }
+    // default condition to cover all other apps
+    appConditions.push(
+      this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
+    )
 
-      switch (includedApp) {
-        case Apps.GoogleWorkspace:
-          appCondition = this.buildGoogleWorkspaceCondition(
-            hits,
-            app,
-            entity,
-            timestampRange,
-            intent,
-          )
-          break
-        case Apps.Gmail:
-          appCondition = this.buildGmailCondition(
-            hits,
-            app,
-            entity,
-            timestampRange,
-            notInMailLabels,
-            intent,
-          )
-          break
-        case Apps.GoogleDrive:
-          appCondition = this.buildGoogleDriveCondition(
-            hits,
-            app,
-            entity,
-            timestampRange,
-            intent,
-          )
-          break
-        case Apps.GoogleCalendar:
-          appCondition = this.buildGoogleCalendarCondition(
-            hits,
-            app,
-            entity,
-            timestampRange,
-            intent,
-          )
-          break
-        case Apps.Slack:
-          appCondition = this.buildSlackCondition(
-            hits,
-            app,
-            entity,
-            timestampRange,
-          )
-          break
-        case Apps.DataSource:
-          // Skip DataSource for now as it's handled differently
-          break
-        default:
-          appCondition = this.buildDefaultCondition(
-            hits,
-            app,
-            entity,
-            timestampRange,
-            intent,
-          )
-          break
-      }
+    if (includedApps.includes(Apps.GoogleWorkspace)) {
+      appConditions.push(
+        this.buildGoogleWorkspaceCondition(
+          hits,
+          app,
+          entity,
+          timestampRange,
+          intent,
+        ),
+      )
+    }
+    if (includedApps.includes(Apps.Gmail)) {
+      appConditions.push(
+        this.buildGmailCondition(
+          hits,
+          app,
+          entity,
+          timestampRange,
+          notInMailLabels,
+          intent,
+        ),
+      )
+    }
+    if (includedApps.includes(Apps.Slack)) {
+      appConditions.push(
+        this.buildSlackCondition(hits, app, entity, timestampRange),
+      )
+    }
 
-      if (appCondition) {
-        appConditions.push(appCondition)
-      }
+    if (includedApps.includes(Apps.DataSource)) {
     }
 
     return appConditions
@@ -507,20 +488,6 @@ export class VespaService {
     const hasAppOrEntity = !!(app || entity)
     if (!hasAppOrEntity) {
       permissionBasedConditions.push(contains("app", Apps.GoogleWorkspace))
-    } else {
-      if (Array.isArray(app) && app.length > 0) {
-        const appConditions = app.map((a) => contains("app", a))
-        permissionBasedConditions.push(or(appConditions).parenthesize())
-      } else if (app && !Array.isArray(app)) {
-        permissionBasedConditions.push(contains("app", app))
-      }
-
-      if (Array.isArray(entity) && entity.length > 0) {
-        const entityConditions = entity.map((e) => contains("entity", e))
-        permissionBasedConditions.push(or(entityConditions).parenthesize())
-      } else if (entity && !Array.isArray(entity)) {
-        permissionBasedConditions.push(contains("entity", entity))
-      }
     }
 
     const permissionBasedQuery = and(permissionBasedConditions).parenthesize()
@@ -581,7 +548,9 @@ export class VespaService {
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(timestamp("timestamp", "timestamp", timestampRange))
+      conditions.push(
+        timestamp("timestamp", "timestamp", timestampRange).parenthesize(),
+      )
     }
 
     if (notInMailLabels && notInMailLabels.length > 0) {
@@ -597,20 +566,6 @@ export class VespaService {
 
         conditions.push(combinedLabels.not())
       }
-    }
-
-    if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => contains("app", a))
-      conditions.push(or(appConditions).parenthesize())
-    } else if (app && !Array.isArray(app)) {
-      conditions.push(contains("app", app))
-    }
-
-    if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => contains("entity", e))
-      conditions.push(or(entityConditions).parenthesize())
-    } else if (entity && !Array.isArray(entity)) {
-      conditions.push(contains("entity", entity))
     }
 
     if (intent) {
@@ -645,20 +600,6 @@ export class VespaService {
       )
     }
 
-    if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => contains("app", a))
-      conditions.push(or(appConditions).parenthesize())
-    } else if (app && !Array.isArray(app)) {
-      conditions.push(contains("app", app))
-    }
-
-    if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => contains("entity", e))
-      conditions.push(or(entityConditions).parenthesize())
-    } else if (entity && !Array.isArray(entity)) {
-      conditions.push(contains("entity", entity))
-    }
-
     return and(conditions).parenthesize()
   }
 
@@ -680,20 +621,6 @@ export class VespaService {
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(timestamp("startTime", "startTime", timestampRange))
-    }
-
-    if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => contains("app", a))
-      conditions.push(or(appConditions).parenthesize())
-    } else if (app && !Array.isArray(app)) {
-      conditions.push(contains("app", app))
-    }
-
-    if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => contains("entity", e))
-      conditions.push(or(entityConditions).parenthesize())
-    } else if (entity && !Array.isArray(entity)) {
-      conditions.push(contains("entity", entity))
     }
 
     return and(conditions).parenthesize()
@@ -720,20 +647,6 @@ export class VespaService {
       )
     }
 
-    if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => contains("app", a))
-      conditions.push(or(appConditions).parenthesize())
-    } else if (app && !Array.isArray(app)) {
-      conditions.push(contains("app", app))
-    }
-
-    if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => contains("entity", e))
-      conditions.push(or(entityConditions).parenthesize())
-    } else if (entity && !Array.isArray(entity)) {
-      conditions.push(contains("entity", entity))
-    }
-
     return and(conditions).parenthesize()
   }
 
@@ -755,22 +668,17 @@ export class VespaService {
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(
-        timestamp("updatedAt", "updatedAt", timestampRange).parenthesize(),
+        or([
+          timestamp("updatedAt", "updatedAt", timestampRange).parenthesize(),
+          timestamp(
+            "creationTime",
+            "creationTime",
+            timestampRange,
+          ).parenthesize(),
+          timestamp("startTime", "startTime", timestampRange).parenthesize(),
+          timestamp("timestamp", "timestamp", timestampRange).parenthesize(),
+        ]).parenthesize(),
       )
-    }
-
-    if (Array.isArray(app) && app.length > 0) {
-      const appConditions = app.map((a) => contains("app", a))
-      conditions.push(or(appConditions).parenthesize())
-    } else if (app && !Array.isArray(app)) {
-      conditions.push(contains("app", app))
-    }
-
-    if (Array.isArray(entity) && entity.length > 0) {
-      const entityConditions = entity.map((e) => contains("entity", e))
-      conditions.push(or(entityConditions).parenthesize())
-    } else if (entity && !Array.isArray(entity)) {
-      conditions.push(contains("entity", entity))
     }
 
     return and(conditions).parenthesize()
