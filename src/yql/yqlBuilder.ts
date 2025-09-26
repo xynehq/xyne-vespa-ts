@@ -59,7 +59,7 @@ export class YqlBuilder {
   /**
    * Set the sources for the query
    */
-  from(sources: VespaSchema | VespaSchema[]): this {
+  from(sources: VespaSchema | VespaSchema[] | "*"): this {
     const sourceArray = Array.isArray(sources) ? sources : [sources]
 
     if (sourceArray.length === 0) {

@@ -485,19 +485,18 @@ class VespaClient {
   }
 
   async getDocumentsByOnlyDocIds(
-    options: VespaConfigValues & { docIds: string[]; generateAnswerSpan: Span },
+    options: VespaConfigValues & {
+      docIds: string[]
+      generateAnswerSpan: Span
+      yql: string
+    },
   ): Promise<VespaSearchResponse> {
-    const { docIds, generateAnswerSpan } = options
-    const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
-    const yqlMailIds = docIds
-      .map((id) => `mailId contains '${id}'`)
-      .join(" or ")
-    const yqlQuery = `select * from sources * where (${yqlIds}) or (${yqlMailIds})`
+    const { docIds, generateAnswerSpan, yql } = options
     const url = `${this.vespaEndpoint}/search/`
 
     try {
       const payload = {
-        yql: yqlQuery,
+        yql: yql,
         hits: docIds?.length,
         maxHits: docIds?.length,
       }
