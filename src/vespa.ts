@@ -86,7 +86,7 @@ const AllSources = [
   datasourceSchema,
   dataSourceFileSchema,
   KbItemsSchema,
-]
+] as VespaSchema[]
 
 export class VespaService {
   private logger: ILogger
@@ -466,12 +466,15 @@ export class VespaService {
     const dataSourceIdConditions = dsIds.map((id: string) =>
       contains("dataSourceId", id.trim()),
     )
-    const searchCondition = or([
+    const searchCondition = Or.withoutPermissions([
       userInput("@query", hits),
       nearestNeighbor("chunk_embeddings", "e", hits),
     ]).parenthesize()
 
-    return and([searchCondition, dataSourceIdConditions]).parenthesize()
+    return And.withoutPermissions([
+      searchCondition,
+      dataSourceIdConditions,
+    ]).parenthesize()
   }
 
   private buildCollectionFileYQL = (
@@ -725,7 +728,9 @@ export class VespaService {
     const intentConditions = []
 
     if (intent.from && intent.from.length > 0) {
-      const fromConditions = intent.from.map((from) => contains("from", from))
+      const fromConditions = intent.from.map((from) =>
+        contains(`\"from\"`, from),
+      )
       intentConditions.push(
         fromConditions.length === 1 ? fromConditions[0]! : or(fromConditions),
       )
@@ -755,33 +760,6 @@ export class VespaService {
     return intentConditions.length > 0
       ? and(intentConditions).parenthesize()
       : null
-  }
-  // Helper function to build intent filter
-  buildIntentFilter = (intent: Intent | null) => {
-    const intentFilters: string[] = []
-    if (intent?.from && intent.from.length > 0) {
-      intentFilters.push(
-        intent.from.map((from) => `\"from\" contains '${from}'`).join(" or "),
-      )
-    }
-    if (intent?.to && intent.to.length > 0) {
-      intentFilters.push(
-        intent.to.map((to) => `to contains '${to}'`).join(" or "),
-      )
-    }
-    if (intent?.cc && intent.cc.length > 0) {
-      intentFilters.push(
-        intent.cc.map((cc) => `cc contains '${cc}'`).join(" or "),
-      )
-    }
-    if (intent?.bcc && intent.bcc.length > 0) {
-      intentFilters.push(
-        intent.bcc.map((bcc) => `bcc contains '${bcc}'`).join(" or "),
-      )
-    }
-    return intentFilters.length > 0
-      ? "and" + " " + intentFilters.join(" and ")
-      : ""
   }
 
   HybridDefaultProfileForAgent = (
@@ -972,60 +950,52 @@ export class VespaService {
     fileIds: string[],
     notInMailLabels?: string[],
   ): YqlProfile => {
-    let mailLabelQuery = ""
-    if (notInMailLabels && notInMailLabels.length > 0) {
-      mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+    const buildContextFilters = (ids: string[]): YqlCondition[] =>
+      ids.filter(Boolean).map((id) => contains("docId", id.trim()))
+
+    const buildDocOrMailSearch = (): YqlCondition => {
+      const baseSearch = or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]).parenthesize()
+
+      if (!notInMailLabels?.length) return baseSearch
+
+      const labelFilters = notInMailLabels
+        .filter((label) => label && label.trim())
+        .map((label) => contains("labels", label.trim()))
+
+      return and([baseSearch, or(labelFilters).not()])
     }
 
-    const contextClauses: string[] = []
+    const buildSlackSearch = (): YqlCondition =>
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ]).parenthesize()
 
-    if (fileIds?.length) {
-      const idFilters = fileIds.map((id) => `docId contains '${id}'`)
-      contextClauses.push(...idFilters)
+    const buildContactSearch = (): YqlCondition =>
+      userInput("@query", hits).parenthesize()
+
+    // --- search conditions ---
+    const searchConditions: YqlCondition[] = [
+      buildDocOrMailSearch(),
+      buildSlackSearch(),
+      buildContactSearch(),
+    ]
+
+    const contextFilters = buildContextFilters(fileIds)
+    if (contextFilters.length > 0) {
+      searchConditions.push(and(contextFilters).parenthesize())
     }
 
-    const specificContextQuery = contextClauses.length
-      ? `and (${contextClauses.join(" or ")})`
-      : ""
-
-    // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
-    return {
-      profile: profile,
-      yql: `
-        select * from sources ${AllSources}
-        where ((
-          (
-            (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-            )
-            and permissions contains @email ${mailLabelQuery}
-            ${specificContextQuery} 
-          )
-            or
-            (
-              (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-            )
-              and permissions contains @email ${specificContextQuery}
-            )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and permissions contains @email ${specificContextQuery}
-          )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and owner contains @email
-            ${specificContextQuery}
-          )
-        )
-      )`,
-    }
+    return YqlBuilder.create("@email", {
+      sources: AllSources,
+      targetHits: hits,
+    })
+      .from(AllSources)
+      .whereOr(...searchConditions)
+      .buildProfile(profile)
   }
 
   HybridDefaultProfileForSlack = (
@@ -1036,56 +1006,38 @@ export class VespaService {
     userId?: string,
     timestampRange?: { to: number | null; from: number | null } | null,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestamps = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
-      }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
-      }
-      return conditions.join(" and ")
-    }
-
-    const timestampCondition = buildTimestamps("createdAt", "createdAt")
-
-    const channelIdConditions =
-      channelIds && channelIds.length > 0
-        ? `(${channelIds.map((id) => `channelId contains '${id}'`).join(" or ")})`
-        : ""
-
-    const threadIdCondition = threadId ? `threadId contains '${threadId}'` : ""
-    const userIdCondition = userId ? `userId contains '${userId}'` : ""
-
-    const conditions = [
-      timestampCondition,
-      channelIdConditions,
-      threadIdCondition,
-      userIdCondition,
+    let conditions: YqlCondition[] = [
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("e", "text_embeddings", hits),
+      ]).parenthesize(),
     ]
-      .filter(Boolean)
-      .join(" and ")
 
-    const yql = `
-    select * from sources ${chatMessageSchema}
-    where (
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        and permissions contains @email
-        ${conditions ? `and ${conditions}` : ""}
+    if (timestampRange && !timestampRange.from && !timestampRange.to) {
+      conditions.push(
+        timestamp("createdAt", "createdAt", timestampRange).parenthesize(),
       )
-    )
-  `
-
-    return {
-      profile: profile,
-      yql: yql,
     }
+
+    if (channelIds && channelIds.length > 0) {
+      conditions.push(
+        or(channelIds.map((id) => contains("channelId", id))).parenthesize(),
+      )
+    }
+    if (threadId) {
+      conditions.push(contains("threadId", threadId).parenthesize())
+    }
+    if (userId) {
+      conditions.push(contains("userId", userId).parenthesize())
+    }
+
+    return YqlBuilder.create("@email", {
+      sources: [chatMessageSchema],
+      targetHits: hits,
+    })
+      .from([chatMessageSchema])
+      .where(and(conditions))
+      .buildProfile(profile)
   }
 
   HybridDefaultProfileAppEntityCounts = (
@@ -1559,6 +1511,7 @@ export class VespaService {
       notInMailLabels,
     )
 
+    console.log("Vespa YQL Query: in files ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
