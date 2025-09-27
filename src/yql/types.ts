@@ -26,6 +26,7 @@ export interface YqlProfile {
 }
 
 export interface YqlBuilderOptions {
+  email?: string
   sources?: string[]
   targetHits?: number
   limit?: number
@@ -40,6 +41,7 @@ export type FieldValue = string | number | boolean
 export type LogicalOperator = "and" | "or"
 export enum Operator {
   CONTAINS = "contains",
+  MATCHES = "matches",
   GREATER_THAN_OR_EQUAL = ">=",
   LESS_THAN_OR_EQUAL = "<=",
   EQUAL = "=",

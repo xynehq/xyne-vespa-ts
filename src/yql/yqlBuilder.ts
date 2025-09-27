@@ -17,46 +17,131 @@ import {
   Include,
   escapeYqlValue,
 } from "./conditions"
-import { or, exclude, include, and, contains } from "."
+import {
+  or,
+  exclude,
+  include,
+  and,
+  contains,
+  andWithoutPermissions,
+  orWithoutPermissions,
+} from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
-import { Apps, Entity, SearchModes, VespaSchema } from "../types"
+import { Apps, Entity, SearchModes, userSchema, VespaSchema } from "../types"
 import { YqlProfile } from "./types"
 
 export class YqlBuilder {
   private selectClause: string = "select *"
   private sourcesClause: string = ""
   private whereConditions: YqlCondition[] = []
+  private currentSources: VespaSchema[] = []
   private limitClause?: number
   private offsetClause?: number
   private timeoutClause?: string
   private groupByClause?: string
   private orderByClause?: string
 
-  private permissionWrapper: PermissionWrapper
+  private permissionWrapper?: PermissionWrapper
   private options: Required<YqlBuilderOptions>
+  private withPermissions: boolean
+  private userEmail?: string
+  constructor(options: Partial<YqlBuilderOptions> = {}) {
+    this.withPermissions = !!(options.email && options.email.trim())
 
-  constructor(
-    private userEmail: string,
-    options: Partial<YqlBuilderOptions> = {},
-  ) {
-    if (!userEmail || !userEmail.trim()) {
-      throw new Error("User email is required for YQL builder")
+    if (this.withPermissions) {
+      this.permissionWrapper = new PermissionWrapper(options.email!)
     }
 
     this.options = {
+      email: options.email || "",
       sources: options.sources || [],
       targetHits: options.targetHits || 10,
       limit: options.limit || 100,
       offset: options.offset || 0,
       timeout: options.timeout || "2s",
-      requirePermissions: options.requirePermissions !== false, // Default to true
-      validateSyntax: options.validateSyntax !== true, // Default to false
+      requirePermissions:
+        this.withPermissions && options.requirePermissions !== false,
+      validateSyntax: options.validateSyntax !== true,
     }
-
-    this.permissionWrapper = new PermissionWrapper(userEmail)
+    this.userEmail = options.email
   }
 
   /**
+   * Set the fields to select in the query
+   */
+  select(fields: string | string[] = "*"): this {
+    if (Array.isArray(fields)) {
+      if (fields.length === 0) {
+        throw new Error("At least one field must be specified")
+      }
+
+      this.selectClause = `select ${fields.join(", ")}`
+    } else {
+      if (!fields || typeof fields !== "string" || !fields.trim()) {
+        throw new Error("Invalid field specification")
+      }
+      this.selectClause = `select ${fields}`
+    }
+
+    return this
+  }
+
+  /**
+   * Helper to create And conditions with proper permission settings
+   */
+  private createAnd(conditions: YqlCondition[]): And {
+    if (this.withPermissions && this.userEmail) {
+      return this.createPermissionAwareAnd(conditions)
+    }
+    return andWithoutPermissions(conditions)
+  }
+
+  private createPermissionAwareAnd(conditions: YqlCondition[]): And {
+    const includesUserSchema = this.currentSources.includes(userSchema)
+    const isSingleUserSchema =
+      this.currentSources.length === 1 && this.currentSources[0] === userSchema
+
+    if (isSingleUserSchema) {
+      // Only owner check for user schema
+      return And.withOwnerPermissions(conditions, this.userEmail!)
+    } else if (includesUserSchema) {
+      // Include both owner and permissions check for user and other schemas
+      return and(conditions, true)
+    } else {
+      // Only permissions check for non-user schemas
+      return And.withEmailPermissions(conditions, this.userEmail!)
+    }
+  }
+
+  /**
+   * Helper to create Or conditions with proper permission settings
+   */
+  private createOr(conditions: YqlCondition[]): Or {
+    if (this.withPermissions && this.userEmail) {
+      return this.createPermissionAwareOr(conditions)
+    }
+    return orWithoutPermissions(conditions)
+  }
+
+  /**
+   * Creates Or condition with conditional permission logic based on sources
+   */
+  private createPermissionAwareOr(conditions: YqlCondition[]): Or {
+    const includesUserSchema = this.currentSources.includes(userSchema)
+    const isSingleUserSchema =
+      this.currentSources.length === 1 && this.currentSources[0] === userSchema
+
+    if (isSingleUserSchema) {
+      // Only owner check for user schema
+      return Or.withOwnerPermissions(conditions, this.userEmail!)
+    } else if (includesUserSchema) {
+      // Include both owner and permissions check for user and other schemas
+      return or(conditions, true)
+    } else {
+      // Only permissions check for non-user schemas
+      return Or.withEmailPermissions(conditions, this.userEmail!)
+    }
+  } /**
    * Set the sources for the query
    */
   from(sources: VespaSchema | VespaSchema[] | "*"): this {
@@ -73,6 +158,7 @@ export class YqlBuilder {
       }
     })
 
+    this.currentSources = sourceArray as VespaSchema[]
     this.sourcesClause = `from sources ${sourceArray.join(", ")}`
     return this
   }
@@ -90,7 +176,7 @@ export class YqlBuilder {
    */
   whereAnd(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(and(conditions, true).parenthesize())
+      this.whereConditions.push(this.createAnd(conditions).parenthesize())
     }
     return this
   }
@@ -100,7 +186,7 @@ export class YqlBuilder {
    */
   whereOr(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(or(conditions).parenthesize())
+      this.whereConditions.push(this.createOr(conditions).parenthesize())
     }
     return this
   }
@@ -138,7 +224,7 @@ export class YqlBuilder {
     const userInput = new UserInput(queryParam, hits)
     const vectorSearch = new NearestNeighbor(vectorField, vectorParam, hits)
 
-    return this.where(or([userInput, vectorSearch]).parenthesize())
+    return this.where(this.createOr([userInput, vectorSearch]).parenthesize())
   }
 
   /**
@@ -168,7 +254,7 @@ export class YqlBuilder {
       return this.where(contains("app", apps[0]!))
     } else if (apps.length > 1) {
       const conditions = apps.map((a) => contains("app", a))
-      return this.where(or(conditions).parenthesize())
+      return this.where(this.createOr(conditions).parenthesize())
     }
 
     return this
@@ -184,7 +270,7 @@ export class YqlBuilder {
       return this.where(contains("entity", entities[0]!))
     } else if (entities.length > 1) {
       const conditions = entities.map((e) => contains("entity", e))
-      return this.where(or(conditions).parenthesize())
+      return this.where(this.createOr(conditions).parenthesize())
     }
 
     return this
@@ -239,7 +325,7 @@ export class YqlBuilder {
       const combinedLabels =
         labelConditions.length === 1
           ? labelConditions[0]!
-          : or(labelConditions).parenthesize()
+          : this.createOr(labelConditions).parenthesize()
 
       return this.where(combinedLabels.not())
     }
@@ -288,8 +374,16 @@ export class YqlBuilder {
   /**
    * Add ORDER BY clause
    */
-  orderBy(clause: string): this {
-    this.orderByClause = clause
+  orderBy(field: string, direction: "asc" | "desc" = "asc"): this {
+    if (!field || typeof field !== "string" || !field.trim()) {
+      throw new Error("Field name is required for ORDER BY")
+    }
+
+    if (direction !== "asc" && direction !== "desc") {
+      throw new Error("Direction must be 'asc' or 'desc'")
+    }
+
+    this.orderByClause = `${field.trim()} ${direction}`
     return this
   }
 
@@ -303,14 +397,15 @@ export class YqlBuilder {
 
     let yql = `${this.selectClause} ${this.sourcesClause}`
 
-    // Build WHERE clause with permission wrapping
-    if (this.whereConditions.length > 0) {
-      const combinedConditions =
-        this.whereConditions.length === 1
-          ? this.whereConditions[0]!
-          : and(this.whereConditions)
-
-      yql += ` where (${combinedConditions.toString()})`
+    // Build WHERE clause with intelligent permission management
+    if (
+      this.whereConditions.length > 0 ||
+      (this.withPermissions && this.userEmail)
+    ) {
+      const whereClause = this.buildWhereClause()
+      if (whereClause) {
+        yql += ` where (${whereClause})`
+      }
     }
 
     // Add other clauses
@@ -335,7 +430,114 @@ export class YqlBuilder {
       this.validateYqlSyntax(yql)
     }
 
+    // Replace @email placeholder with actual email if available
+    if (this.userEmail && this.userEmail.trim()) {
+      yql = yql.replace(/@email/g, `'${this.userEmail}'`)
+    }
+
     return yql
+  }
+
+  /**
+   * Build WHERE clause with intelligent permission management
+   */
+  private buildWhereClause(): string | null {
+    // If we have permissions enabled but no where conditions, add just permissions
+    if (
+      this.whereConditions.length === 0 &&
+      this.withPermissions &&
+      this.userEmail
+    ) {
+      const permissionCondition = this.buildPermissionCondition()
+      return permissionCondition ? permissionCondition.toString() : null
+    }
+
+    if (this.whereConditions.length === 0) {
+      return null
+    }
+
+    let combinedConditions: YqlCondition
+
+    if (this.whereConditions.length === 1) {
+      combinedConditions = this.whereConditions[0]!
+    } else {
+      combinedConditions = and(this.whereConditions, true)
+    }
+
+    // Apply permissions only at the top level if permissions are enabled
+    if (this.withPermissions && this.userEmail) {
+      const processedCondition =
+        this.applyTopLevelPermissions(combinedConditions)
+      return processedCondition.toString()
+    }
+
+    return combinedConditions.toString()
+  }
+
+  /**
+   * Apply permissions to each OR condition individually
+   */
+  private applyTopLevelPermissions(condition: YqlCondition): YqlCondition {
+    return this.recursivelyApplyPermissions(condition)
+  }
+
+  /**
+   * Recursively apply permissions to all OR conditions in the tree
+   */
+  private recursivelyApplyPermissions(condition: YqlCondition): YqlCondition {
+    // If it's an And condition, process each child recursively
+    if (condition instanceof And) {
+      const processedConditions = condition
+        .getConditions()
+        .map((child) => this.recursivelyApplyPermissions(child))
+      // won't require permissions for AND children as parent OR will handle it
+      // Top level ANDs will contains permissions
+      return and(processedConditions).parenthesize()
+    }
+
+    // If it's an Or condition, wrap it with permissions and process children
+    if (condition instanceof Or) {
+      // First, recursively process any nested OR conditions within this OR
+      const processedConditions = condition
+        .getConditions()
+        .map((child) => this.recursivelyApplyPermissions(child))
+
+      // Then wrap this OR with permissions
+      return or(processedConditions, true).parenthesize()
+    }
+
+    if (condition instanceof Timestamp) {
+      return condition.parenthesize()
+    }
+    // Leaf nodes, return as-is (permissions will be added by parent OR)
+    return condition
+  }
+
+  /**
+   * Build permission condition based on current sources
+   */
+  private buildPermissionCondition(): YqlCondition | null {
+    if (!this.userEmail) {
+      return null
+    }
+
+    const includesUserSchema = this.currentSources.includes(userSchema)
+    const isSingleUserSchema =
+      this.currentSources.length === 1 && this.currentSources[0] === userSchema
+
+    if (isSingleUserSchema) {
+      // Only owner check for single user schema
+      return contains("owner", this.userEmail)
+    } else if (includesUserSchema) {
+      // Both owner and permissions check for mixed sources with user schema
+      return or([
+        contains("owner", this.userEmail),
+        contains("permissions", this.userEmail),
+      ]).parenthesize()
+    } else {
+      // Only permissions check for non-user schemas
+      return contains("permissions", this.userEmail)
+    }
   }
 
   /**
@@ -404,10 +606,7 @@ export class YqlBuilder {
   /**
    * Create a new builder instance
    */
-  static create(
-    userEmail: string,
-    options?: Partial<YqlBuilderOptions>,
-  ): YqlBuilder {
-    return new YqlBuilder(userEmail, options)
+  static create(options?: Partial<YqlBuilderOptions>): YqlBuilder {
+    return new YqlBuilder(options)
   }
 }

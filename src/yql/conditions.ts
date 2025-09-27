@@ -80,6 +80,10 @@ export class VespaField extends BaseCondition {
     return new VespaField(field, Operator.CONTAINS, value)
   }
 
+  static matches(field: FieldName, value: FieldValue): VespaField {
+    return new VespaField(field, Operator.MATCHES, value)
+  }
+
   static equals(field: FieldName, value: FieldValue): VespaField {
     return new VespaField(field, Operator.EQUAL, value)
   }
@@ -142,7 +146,7 @@ export class NearestNeighbor extends BaseCondition {
 export class And extends BaseCondition {
   constructor(
     private conditions: YqlCondition[],
-    private requirePermissions: boolean = false,
+    private requirePermissions: boolean = false, // Default to false to avoid unintended permissions
     private userEmail: string = "@email",
     private permissionType: PermissionFieldType = PermissionFieldType.BOTH,
   ) {
@@ -182,6 +186,13 @@ export class And extends BaseCondition {
   }
 
   /**
+   * Get the conditions (for recursive processing)
+   */
+  getConditions(): YqlCondition[] {
+    return [...this.conditions]
+  }
+
+  /**
    * Creates an AndCondition with automatic email permission checking (permissions field) - explicit method
    */
   static withEmailPermissions(
@@ -215,7 +226,7 @@ export class And extends BaseCondition {
 export class Or extends BaseCondition {
   constructor(
     private conditions: YqlCondition[],
-    private requirePermissions: boolean = true, // Default to true for email permissions
+    private requirePermissions: boolean = false,
     private userEmail: string = "@email",
     private permissionType: PermissionFieldType = PermissionFieldType.BOTH,
   ) {
@@ -255,6 +266,13 @@ export class Or extends BaseCondition {
       this.userEmail,
       this.permissionType,
     )
+  }
+
+  /**
+   * Get the conditions (for recursive processing)
+   */
+  getConditions(): YqlCondition[] {
+    return [...this.conditions]
   }
 
   /**
