@@ -485,19 +485,18 @@ class VespaClient {
   }
 
   async getDocumentsByOnlyDocIds(
-    options: VespaConfigValues & { docIds: string[]; generateAnswerSpan: Span },
+    options: VespaConfigValues & {
+      docIds: string[]
+      generateAnswerSpan: Span
+      yql: string
+    },
   ): Promise<VespaSearchResponse> {
-    const { docIds, generateAnswerSpan } = options
-    const yqlIds = docIds.map((id) => `docId contains '${id}'`).join(" or ")
-    const yqlMailIds = docIds
-      .map((id) => `mailId contains '${id}'`)
-      .join(" or ")
-    const yqlQuery = `select * from sources * where (${yqlIds}) or (${yqlMailIds})`
+    const { docIds, generateAnswerSpan, yql } = options
     const url = `${this.vespaEndpoint}/search/`
 
     try {
       const payload = {
-        yql: yqlQuery,
+        yql: yql,
         hits: docIds?.length,
         maxHits: docIds?.length,
       }
@@ -1111,14 +1110,13 @@ class VespaClient {
     options: VespaConfigValues,
     limit: number = 100,
     offset: number = 0,
+    yql: string,
   ): Promise<VespaSearchResponse> {
     const { namespace, schema, cluster } = options
 
-    const yqlQuery = `select * from sources ${schema} where ${fieldName} matches "."`
-
     // Construct the search payload - using "unranked" profile to just fetch without scoring
     const searchPayload = {
-      yql: yqlQuery,
+      yql,
       "ranking.profile": "unranked",
       timeout: "5s",
       hits: limit,
