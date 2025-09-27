@@ -193,6 +193,13 @@ export class And extends BaseCondition {
   }
 
   /**
+   * Check if this AND condition requires permissions
+   */
+  isPermissionRequired(): boolean {
+    return this.requirePermissions
+  }
+
+  /**
    * Creates an AndCondition with automatic email permission checking (permissions field) - explicit method
    */
   static withEmailPermissions(
@@ -273,6 +280,13 @@ export class Or extends BaseCondition {
    */
   getConditions(): YqlCondition[] {
     return [...this.conditions]
+  }
+
+  /**
+   * Check if this OR condition requires permissions
+   */
+  isPermissionRequired(): boolean {
+    return this.requirePermissions
   }
 
   /**

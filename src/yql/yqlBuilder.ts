@@ -485,8 +485,16 @@ export class YqlBuilder {
    * Recursively apply permissions to all OR conditions in the tree
    */
   private recursivelyApplyPermissions(condition: YqlCondition): YqlCondition {
-    // If it's an And condition, process each child recursively
+    // processing each condition based on its type
     if (condition instanceof And) {
+      // Check if this AND condition was explicitly created without permissions
+      if (!condition.isPermissionRequired()) {
+        const processedConditions = condition
+          .getConditions()
+          .map((child) => this.recursivelyApplyPermissions(child))
+        return andWithoutPermissions(processedConditions).parenthesize()
+      }
+
       const processedConditions = condition
         .getConditions()
         .map((child) => this.recursivelyApplyPermissions(child))
@@ -497,12 +505,19 @@ export class YqlBuilder {
 
     // If it's an Or condition, wrap it with permissions and process children
     if (condition instanceof Or) {
+      // Check if this OR condition was explicitly created without permissions
+      if (!condition.isPermissionRequired()) {
+        const processedConditions = condition
+          .getConditions()
+          .map((child) => this.recursivelyApplyPermissions(child))
+        return orWithoutPermissions(processedConditions).parenthesize()
+      }
+
       // First, recursively process any nested OR conditions within this OR
       const processedConditions = condition
         .getConditions()
         .map((child) => this.recursivelyApplyPermissions(child))
 
-      // Then wrap this OR with permissions
       return or(processedConditions, true).parenthesize()
     }
 

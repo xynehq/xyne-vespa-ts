@@ -772,6 +772,7 @@ export class VespaService {
     processedCollectionSelections: CollectionVespaIds = {},
     driveIds: string[] = [],
     selectedItem: Record<string, unknown> = {},
+    email?: string,
   ): YqlProfile => {
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
@@ -922,7 +923,7 @@ export class VespaService {
     }
 
     const yqlBuilder = YqlBuilder.create({
-      email: "@email",
+      email,
       sources: [...sources],
       targetHits: hits,
     })
@@ -945,6 +946,7 @@ export class VespaService {
     profile: SearchModes = SearchModes.NativeRank,
     fileIds: string[],
     notInMailLabels?: string[],
+    email?: string,
   ): YqlProfile => {
     const buildContextFilters = (ids: string[]): YqlCondition[] =>
       ids.filter(Boolean).map((id) => contains("docId", id.trim()))
@@ -985,7 +987,7 @@ export class VespaService {
     }
 
     return YqlBuilder.create({
-      email: "@email",
+      email,
       sources: AllSources,
       targetHits: hits,
     })
@@ -1001,6 +1003,7 @@ export class VespaService {
     threadId?: string,
     userId?: string,
     timestampRange?: { to: number | null; from: number | null } | null,
+    email?: string,
   ): YqlProfile => {
     let conditions: YqlCondition[] = [
       or([
@@ -1024,7 +1027,7 @@ export class VespaService {
     }
 
     return YqlBuilder.create({
-      email: "@email",
+      email,
       sources: [chatMessageSchema],
       targetHits: hits,
     })
@@ -1123,6 +1126,7 @@ export class VespaService {
     AllowedApps: Apps[] | null,
     dataSourceIds: string[] = [],
     limit: number = 400,
+    email: string,
   ): Promise<VespaSearchResponse | null> => {
     const sources: VespaSchema[] = []
     const conditions: YqlCondition[] = []
@@ -1175,7 +1179,7 @@ export class VespaService {
 
     const schemaSources = [...new Set(sources)]
     const yql = YqlBuilder.create({
-      email: "@email",
+      email,
       sources: schemaSources,
       targetHits: limit,
     })
@@ -1448,9 +1452,10 @@ export class VespaService {
       rankProfile,
       fileIds,
       notInMailLabels,
+      email,
     )
 
-    console.log("Vespa YQL Query: in files ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query: in files ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1509,6 +1514,7 @@ export class VespaService {
       threadId,
       userId,
       timestampRange,
+      email,
     )
 
     const hybridDefaultPayload = {
@@ -1604,6 +1610,7 @@ export class VespaService {
       processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
       selectedItem,
+      email,
     )
 
     console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
@@ -2244,8 +2251,17 @@ export class VespaService {
     name: string,
     createdByEmail: string,
   ): Promise<VespaDataSourceSearch | null> => {
-    const yql = `select * from ${datasourceSchema} where name contains @name and createdBy contains @email limit 1`
+    const yql = YqlBuilder.create()
+      .from(datasourceSchema)
+      .where(
+        and([contains("name", name), contains("createdBy", createdByEmail)]),
+      )
+      .limit(1)
+      .build()
 
+    this.logger.info(
+      `Fetching DataSource by name "${name}" and creator "${createdByEmail}"`,
+    )
     const payload = {
       yql,
       name,
@@ -2286,7 +2302,12 @@ export class VespaService {
     createdByEmail: string,
     limit: number = 100,
   ): Promise<VespaSearchResponse> => {
-    const yql = `select * from ${datasourceSchema} where createdBy contains @email limit ${limit}`
+    const yql = YqlBuilder.create()
+      .from(datasourceSchema)
+      .where(contains("createdBy", createdByEmail))
+      .limit(limit)
+      .build()
+
     const payload = {
       yql,
       email: createdByEmail,
@@ -2314,12 +2335,17 @@ export class VespaService {
     dataSourceId: string,
     uploadedBy: string,
   ): Promise<boolean> => {
-    const yql = `
-    select * 
-    from sources ${dataSourceFileSchema} 
-    where fileName contains @fileName and dataSourceId contains @dataSourceId and uploadedBy contains @uploadedBy 
-    limit 1
-  `
+    const yql = YqlBuilder.create()
+      .from(dataSourceFileSchema)
+      .where(
+        and([
+          contains("fileName", fileName),
+          contains("dataSourceId", dataSourceId),
+          contains("uploadedBy", uploadedBy),
+        ]),
+      )
+      .limit(1)
+      .build()
 
     const payload = {
       yql,
@@ -2356,12 +2382,19 @@ export class VespaService {
     concurrency = 3,
     batchSize = 400,
   ): Promise<VespaSearchResult[] | null> => {
+    const yql = YqlBuilder.create()
+      .from(dataSourceFileSchema)
+      .where(
+        and([
+          contains("dataSourceName", dataSourceName),
+          contains("uploadedBy", userEmail),
+        ]),
+      )
+      .limit(0)
+      .build()
+
     const countPayload = {
-      yql: `
-      select * 
-      from sources ${dataSourceFileSchema} 
-      where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
-    `,
+      yql,
       dataSourceName,
       userEmail,
       hits: 0,
@@ -2391,13 +2424,19 @@ export class VespaService {
 
     const batchPayloads = []
     for (let offset = 0; offset < totalCount; offset += batchSize) {
+      const yql = YqlBuilder.create()
+        .from(dataSourceFileSchema)
+        .where(
+          and([
+            contains("dataSourceName", dataSourceName),
+            contains("uploadedBy", userEmail),
+          ]),
+        )
+        .orderBy("createdAt", "desc")
+        .build()
+
       const payload = {
-        yql: `
-        select * 
-        from sources ${dataSourceFileSchema} 
-        where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
-        order by createdAt desc
-      `,
+        yql,
         dataSourceName,
         userEmail,
         hits: Math.min(batchSize, totalCount - offset),
