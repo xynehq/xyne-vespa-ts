@@ -2484,75 +2484,31 @@ export class VespaService {
     timestampRange?: { to: number | null; from: number | null } | null,
     channelId?: string,
     userId?: string,
+    email?: string,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestamps = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
-      }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
-      }
-      return conditions.join(" and ")
-    }
-
-    // Helper function to build entity filter
-    const buildEntityFilter = () => {
-      return entity ? "and entity contains @entity" : ""
-    }
-
-    // Helper function to build channel filter
-    const buildChannelFilter = () => {
-      return channelId ? "and channelId contains @channelId" : ""
-    }
-
-    // Helper function to build user filter
-    const buildUserFilter = () => {
-      return userId ? "and userId contains @userId" : ""
-    }
-
-    // Build Slack YQL
-    const buildSlackYQL = () => {
-      const timestampCondition = timestampRange
-        ? buildTimestamps("createdAt", "createdAt")
-        : ""
-      const entityFilter = buildEntityFilter()
-      const channelFilter = buildChannelFilter()
-      const userFilter = buildUserFilter()
-
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        ${timestampCondition ? `and (${timestampCondition})` : ""}
-        and permissions contains @email
-        ${entityFilter}
-        ${channelFilter}
-        ${userFilter}
-      )`
-    }
-
-    const combinedQuery = buildSlackYQL()
-    const sources = [chatMessageSchema] // Only chat message schema for Slack
-
-    return {
-      profile: profile,
-      yql: `
-    select *
-    from sources ${sources.join(", ")} 
-    where
-    (
-      (
-        ${combinedQuery}
+    const conditions: YqlCondition[] = [
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ]),
+    ]
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(
+        timestamp("createdAt", "createdAt", {
+          from: timestampRange.from,
+          to: timestampRange.to,
+        }),
       )
-    )
-    ;
-    `,
     }
+
+    if (entity) conditions.push(contains("entity", entity))
+    if (channelId) conditions.push(contains("channelId", channelId))
+    if (userId) conditions.push(contains("userId", userId))
+
+    return YqlBuilder.create({ email })
+      .from(chatMessageSchema)
+      .where(and(conditions))
+      .buildProfile(profile)
   }
 
   SearchVespaThreads = async (
@@ -2675,6 +2631,7 @@ export class VespaService {
         timestampRange,
         channelId,
         userId,
+        email,
       )
 
       const hybridPayload = {
@@ -2706,40 +2663,30 @@ export class VespaService {
     }
 
     // Plain YQL search
-    const conditions: string[] = []
+    const conditions: YqlCondition[] = []
 
-    if (entity) conditions.push(`entity contains "${entity}"`)
-    if (userEmail) conditions.push(`permissions contains "${userEmail}"`)
-    if (channelId) conditions.push(`channelId contains "${channelId}"`)
-    if (userId) conditions.push(`userId contains "${userId}"`)
+    if (channelId) conditions.push(contains("channelId", channelId))
+    if (userId) conditions.push(contains("userId", userId))
 
     const timestampField = "createdAt"
-
-    const buildTimestamps = (fromField: string, toField: string) => {
-      const timestampConditions: string[] = []
-      if (timestampRange?.from) {
-        timestampConditions.push(`${fromField} >= '${timestampRange.from}'`)
-      }
-      if (timestampRange?.to) {
-        timestampConditions.push(`${toField} <= '${timestampRange.to}'`)
-      }
-      return timestampConditions
-    }
-
     if (timestampRange) {
-      const timestampConditions = buildTimestamps(
+      const timestampConditions = timestamp(
         timestampField,
         timestampField,
+        timestampRange,
       )
-      conditions.push(...timestampConditions)
+      conditions.push(timestampConditions)
     }
 
-    const whereClause = conditions.length
-      ? `where ${conditions.join(" and ")}`
-      : ""
-    const orderClause = `order by createdAt ${asc ? "asc" : "desc"}`
-    const yql = `select * from sources ${chatMessageSchema} ${whereClause} ${orderClause} limit ${limit} offset ${offset}`
+    const yqlBuilder = YqlBuilder.create({ email })
+      .from(chatMessageSchema)
+      .where(and(conditions))
+      .orderBy(timestampField, asc ? "asc" : "desc")
+    if (limit) yqlBuilder.limit(limit)
+    if (offset) yqlBuilder.offset(offset)
+    if (entity) yqlBuilder.filterByEntity(entity)
 
+    const yql = yqlBuilder.build()
     const payload = {
       yql,
       "ranking.profile": "unranked",
@@ -2825,36 +2772,34 @@ export class VespaService {
       })
     }
 
-    // Build optional docId filtering conditions
-    let docIdFilter = ""
-    if (docIds && docIds.length > 0) {
-      const docIdConditions = docIds
-        .map((id) => `docId contains '${escapeYqlValue(id.trim())}'`)
-        .join(" or ")
-      docIdFilter = `and (${docIdConditions})`
-    }
-    let parentDocIdFilter = ""
-    if (parentDocIds && parentDocIds.length > 0) {
-      const parentDocIdConditions = parentDocIds
-        .map((id) => `clFd contains '${escapeYqlValue(id.trim())}'`)
-        .join(" or ")
-      parentDocIdFilter = `and (${parentDocIdConditions})`
-    }
-
     // Construct RAG YQL query - hybrid search with both text and vector search
     // This combines BM25 text search with vector similarity search
-    const yqlQuery = `select * from sources ${KbItemsSchema} where (
-      (
-        ({targetHits:${limit}} userInput(@query))
-        or
-        ({targetHits:${limit}} nearestNeighbor(chunk_embeddings, e))
+    const conditions: YqlCondition[] = [
+      or([
+        userInput("@query", limit),
+        nearestNeighbor("e", "chunk_embeddings", limit),
+      ]),
+    ]
+
+    if (docIds && docIds.length > 0) {
+      const docIdConditions = docIds.map((id) => contains("docId", id.trim()))
+      conditions.push(or(docIdConditions))
+    }
+
+    if (parentDocIds && parentDocIds.length > 0) {
+      const parentDocIdConditions = parentDocIds.map((id) =>
+        contains("clFd", id.trim()),
       )
-      ${docIdFilter}
-      ${parentDocIdFilter}
-    )`
+      conditions.push(or(parentDocIdConditions))
+    }
+
+    const yql = YqlBuilder.create()
+      .from(KbItemsSchema)
+      .where(and(conditions))
+      .build()
 
     const searchPayload = {
-      yql: yqlQuery,
+      yql: yql,
       query: query.trim(),
       "ranking.profile": rankProfile,
       "input.query(e)": "embed(@query)",

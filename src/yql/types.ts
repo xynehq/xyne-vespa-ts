@@ -72,3 +72,10 @@ export enum PermissionFieldType {
   PERMISSIONS = "permissions",
   BOTH = "both",
 }
+
+export interface PermissionOptions {
+  requirePermissions?: boolean
+  userEmail?: string
+  permissionType?: PermissionFieldType
+  bypassPermissions?: boolean
+}

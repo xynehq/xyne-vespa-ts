@@ -7,6 +7,7 @@ import {
   FieldName,
   FieldValue,
   PermissionFieldType,
+  PermissionOptions,
   Operator,
 } from "./types"
 
@@ -144,16 +145,24 @@ export class NearestNeighbor extends BaseCondition {
  * Logical AND condition
  */
 export class And extends BaseCondition {
+  private requirePermissions: boolean
+  private userEmail: string
+  private permissionType: PermissionFieldType
+  private bypassPermissions: boolean
   constructor(
     private conditions: YqlCondition[],
-    private requirePermissions: boolean = false, // Default to false to avoid unintended permissions
-    private userEmail: string = "@email",
-    private permissionType: PermissionFieldType = PermissionFieldType.BOTH,
+    permissionOptions: PermissionOptions = {},
   ) {
     super()
     if (conditions.length === 0) {
       throw new Error("AND condition requires at least one condition")
     }
+
+    this.requirePermissions = permissionOptions.requirePermissions ?? false
+    this.userEmail = permissionOptions.userEmail ?? "@email"
+    this.permissionType =
+      permissionOptions.permissionType ?? PermissionFieldType.BOTH
+    this.bypassPermissions = permissionOptions.bypassPermissions ?? false
   }
 
   toString(): string {
@@ -162,27 +171,26 @@ export class And extends BaseCondition {
     if (this.requirePermissions) {
       if (this.permissionType === PermissionFieldType.BOTH) {
         return `(${andCondition}) and (
-                ${PermissionFieldType.OWNER} contains ${this.userEmail} or 
-                ${PermissionFieldType.PERMISSIONS} contains ${this.userEmail}
+                ${PermissionFieldType.OWNER} contains '${this.userEmail}' or 
+                ${PermissionFieldType.PERMISSIONS} contains '${this.userEmail}'
                 )`
       }
       const permissionField =
         this.permissionType === PermissionFieldType.OWNER
           ? PermissionFieldType.OWNER
           : PermissionFieldType.PERMISSIONS
-      return `(${andCondition}) and ${permissionField} contains ${this.userEmail}`
+      return `(${andCondition}) and ${permissionField} contains '${this.userEmail}'`
     }
 
     return andCondition
   }
 
   add(condition: YqlCondition): And {
-    return new And(
-      [...this.conditions, condition],
-      this.requirePermissions,
-      this.userEmail,
-      this.permissionType,
-    )
+    return new And([...this.conditions, condition], {
+      requirePermissions: this.requirePermissions,
+      userEmail: this.userEmail,
+      permissionType: this.permissionType,
+    })
   }
 
   /**
@@ -193,10 +201,10 @@ export class And extends BaseCondition {
   }
 
   /**
-   * Check if this AND condition requires permissions
+   * Check if permission have been bypassed explicitly
    */
-  isPermissionRequired(): boolean {
-    return this.requirePermissions
+  isPermissionBypassed(): boolean {
+    return this.bypassPermissions
   }
 
   /**
@@ -206,7 +214,11 @@ export class And extends BaseCondition {
     conditions: YqlCondition[],
     userEmail: string = "@email",
   ): And {
-    return new And(conditions, true, userEmail, PermissionFieldType.PERMISSIONS)
+    return new And(conditions, {
+      requirePermissions: true,
+      userEmail,
+      permissionType: PermissionFieldType.PERMISSIONS,
+    })
   }
 
   /**
@@ -216,14 +228,21 @@ export class And extends BaseCondition {
     conditions: YqlCondition[],
     userEmail: string = "@email",
   ): And {
-    return new And(conditions, true, userEmail, PermissionFieldType.OWNER)
+    return new And(conditions, {
+      requirePermissions: true,
+      userEmail,
+      permissionType: PermissionFieldType.OWNER,
+    })
   }
 
   /**
    * Creates an AndCondition without any permission checking
    */
   static withoutPermissions(conditions: YqlCondition[]): And {
-    return new And(conditions, false)
+    return new And(conditions, {
+      requirePermissions: false,
+      bypassPermissions: true,
+    })
   }
 }
 
@@ -231,16 +250,25 @@ export class And extends BaseCondition {
  * Logical OR condition with automatic email permission checking by default
  */
 export class Or extends BaseCondition {
+  private requirePermissions: boolean
+  private userEmail: string
+  private permissionType: PermissionFieldType
+  private bypassPermissions: boolean
+
   constructor(
     private conditions: YqlCondition[],
-    private requirePermissions: boolean = false,
-    private userEmail: string = "@email",
-    private permissionType: PermissionFieldType = PermissionFieldType.BOTH,
+    permissionOptions: PermissionOptions = {},
   ) {
     super()
     if (conditions.length === 0) {
       throw new Error("OR condition requires at least one condition")
     }
+
+    this.requirePermissions = permissionOptions.requirePermissions ?? false
+    this.userEmail = permissionOptions.userEmail ?? "@email"
+    this.permissionType =
+      permissionOptions.permissionType ?? PermissionFieldType.BOTH
+    this.bypassPermissions = permissionOptions.bypassPermissions ?? false
   }
 
   toString(): string {
@@ -249,15 +277,15 @@ export class Or extends BaseCondition {
     if (this.requirePermissions) {
       if (this.permissionType === PermissionFieldType.BOTH) {
         return `(${orCondition}) and (
-                ${PermissionFieldType.OWNER} contains ${this.userEmail} or 
-                ${PermissionFieldType.PERMISSIONS} contains ${this.userEmail}
+                ${PermissionFieldType.OWNER} contains '${this.userEmail}' or
+                ${PermissionFieldType.PERMISSIONS} contains '${this.userEmail}'
                 )`
       }
       const permissionField =
         this.permissionType === PermissionFieldType.OWNER
           ? PermissionFieldType.OWNER
           : PermissionFieldType.PERMISSIONS
-      return `(${orCondition}) and ${permissionField} contains ${this.userEmail}`
+      return `(${orCondition}) and ${permissionField} contains '${this.userEmail}'`
     }
 
     return orCondition
@@ -267,12 +295,12 @@ export class Or extends BaseCondition {
     condition: YqlCondition,
     requirePermissions: boolean = this.requirePermissions,
   ): Or {
-    return new Or(
-      [...this.conditions, condition],
+    return new Or([...this.conditions, condition], {
       requirePermissions,
-      this.userEmail,
-      this.permissionType,
-    )
+      userEmail: this.userEmail,
+      permissionType: this.permissionType,
+      bypassPermissions: this.bypassPermissions,
+    })
   }
 
   /**
@@ -283,10 +311,10 @@ export class Or extends BaseCondition {
   }
 
   /**
-   * Check if this OR condition requires permissions
+   * Check if permission have been bypassed explicitly
    */
-  isPermissionRequired(): boolean {
-    return this.requirePermissions
+  isPermissionBypassed(): boolean {
+    return this.bypassPermissions
   }
 
   /**
@@ -296,7 +324,11 @@ export class Or extends BaseCondition {
     conditions: YqlCondition[],
     userEmail: string = "@email",
   ): Or {
-    return new Or(conditions, true, userEmail, PermissionFieldType.PERMISSIONS)
+    return new Or(conditions, {
+      requirePermissions: true,
+      userEmail,
+      permissionType: PermissionFieldType.PERMISSIONS,
+    })
   }
 
   /**
@@ -306,14 +338,21 @@ export class Or extends BaseCondition {
     conditions: YqlCondition[],
     userEmail: string = "@email",
   ): Or {
-    return new Or(conditions, true, userEmail, PermissionFieldType.OWNER)
+    return new Or(conditions, {
+      requirePermissions: true,
+      userEmail,
+      permissionType: PermissionFieldType.OWNER,
+    })
   }
 
   /**
    * Creates an OrCondition without any permission checking
    */
   static withoutPermissions(conditions: YqlCondition[]): Or {
-    return new Or(conditions, false)
+    return new Or(conditions, {
+      requirePermissions: false,
+      bypassPermissions: true,
+    })
   }
 }
 

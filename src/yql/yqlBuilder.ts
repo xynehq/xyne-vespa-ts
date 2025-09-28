@@ -25,6 +25,8 @@ import {
   contains,
   andWithoutPermissions,
   orWithoutPermissions,
+  andWithPermissions,
+  orWithPermissions,
 } from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
 import { Apps, Entity, SearchModes, userSchema, VespaSchema } from "../types"
@@ -47,10 +49,6 @@ export class YqlBuilder {
   private userEmail?: string
   constructor(options: Partial<YqlBuilderOptions> = {}) {
     this.withPermissions = !!(options.email && options.email.trim())
-
-    if (this.withPermissions) {
-      this.permissionWrapper = new PermissionWrapper(options.email!)
-    }
 
     this.options = {
       email: options.email || "",
@@ -89,8 +87,11 @@ export class YqlBuilder {
   /**
    * Helper to create And conditions with proper permission settings
    */
-  private createAnd(conditions: YqlCondition[]): And {
-    if (this.withPermissions && this.userEmail) {
+  private createAnd(
+    conditions: YqlCondition[],
+    isPermissionBypassed: boolean = false,
+  ): And {
+    if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
       return this.createPermissionAwareAnd(conditions)
     }
     return andWithoutPermissions(conditions)
@@ -103,21 +104,24 @@ export class YqlBuilder {
 
     if (isSingleUserSchema) {
       // Only owner check for user schema
-      return And.withOwnerPermissions(conditions, this.userEmail!)
+      return And.withOwnerPermissions(conditions)
     } else if (includesUserSchema) {
       // Include both owner and permissions check for user and other schemas
-      return and(conditions, true)
+      return andWithPermissions(conditions)
     } else {
       // Only permissions check for non-user schemas
-      return And.withEmailPermissions(conditions, this.userEmail!)
+      return And.withEmailPermissions(conditions)
     }
   }
 
   /**
    * Helper to create Or conditions with proper permission settings
    */
-  private createOr(conditions: YqlCondition[]): Or {
-    if (this.withPermissions && this.userEmail) {
+  private createOr(
+    conditions: YqlCondition[],
+    isPermissionBypassed: boolean = false,
+  ): Or {
+    if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
       return this.createPermissionAwareOr(conditions)
     }
     return orWithoutPermissions(conditions)
@@ -133,13 +137,13 @@ export class YqlBuilder {
 
     if (isSingleUserSchema) {
       // Only owner check for user schema
-      return Or.withOwnerPermissions(conditions, this.userEmail!)
+      return Or.withOwnerPermissions(conditions)
     } else if (includesUserSchema) {
       // Include both owner and permissions check for user and other schemas
-      return or(conditions, true)
+      return orWithPermissions(conditions)
     } else {
       // Only permissions check for non-user schemas
-      return Or.withEmailPermissions(conditions, this.userEmail!)
+      return Or.withEmailPermissions(conditions)
     }
   } /**
    * Set the sources for the query
@@ -432,7 +436,7 @@ export class YqlBuilder {
 
     // Replace @email placeholder with actual email if available
     if (this.userEmail && this.userEmail.trim()) {
-      yql = yql.replace(/@email/g, `'${this.userEmail}'`)
+      yql = yql.replace(/@email/g, `${this.userEmail}`)
     }
 
     return yql
@@ -461,7 +465,7 @@ export class YqlBuilder {
     if (this.whereConditions.length === 1) {
       combinedConditions = this.whereConditions[0]!
     } else {
-      combinedConditions = and(this.whereConditions, true)
+      combinedConditions = andWithPermissions(this.whereConditions)
     }
 
     // Apply permissions only at the top level if permissions are enabled
@@ -471,7 +475,38 @@ export class YqlBuilder {
       return processedCondition.toString()
     }
 
-    return combinedConditions.toString()
+    return this.parenthesisConditions(combinedConditions).toString()
+  }
+
+  private parenthesisConditions(condition: YqlCondition): YqlCondition {
+    return this.recursivelyApplyParentheses(condition)
+  }
+
+  /**
+   * Recursively apply parentheses to all OR and AND conditions in the tree
+   */
+  private recursivelyApplyParentheses(condition: YqlCondition): YqlCondition {
+    if (condition instanceof And) {
+      const processedConditions = condition
+        .getConditions()
+        .map((child) => this.recursivelyApplyParentheses(child))
+
+      return and(processedConditions).parenthesize()
+    }
+
+    if (condition instanceof Or) {
+      const processedConditions = condition
+        .getConditions()
+        .map((child) => this.recursivelyApplyParentheses(child))
+      // Create new Or condition from processed conditions and parenthesize it
+      return or(processedConditions).parenthesize()
+    }
+
+    if (condition instanceof Timestamp) {
+      return condition.parenthesize()
+    }
+    // Leaf nodes, return as-is (parentheses will be added by parent conditions as needed)
+    return condition
   }
 
   /**
@@ -482,13 +517,13 @@ export class YqlBuilder {
   }
 
   /**
-   * Recursively apply permissions to all OR conditions in the tree
+   * Recursively apply permissions to all OR and AND conditions in the tree
    */
   private recursivelyApplyPermissions(condition: YqlCondition): YqlCondition {
     // processing each condition based on its type
     if (condition instanceof And) {
       // Check if this AND condition was explicitly created without permissions
-      if (!condition.isPermissionRequired()) {
+      if (condition.isPermissionBypassed()) {
         const processedConditions = condition
           .getConditions()
           .map((child) => this.recursivelyApplyPermissions(child))
@@ -506,7 +541,7 @@ export class YqlBuilder {
     // If it's an Or condition, wrap it with permissions and process children
     if (condition instanceof Or) {
       // Check if this OR condition was explicitly created without permissions
-      if (!condition.isPermissionRequired()) {
+      if (condition.isPermissionBypassed()) {
         const processedConditions = condition
           .getConditions()
           .map((child) => this.recursivelyApplyPermissions(child))
@@ -518,7 +553,7 @@ export class YqlBuilder {
         .getConditions()
         .map((child) => this.recursivelyApplyPermissions(child))
 
-      return or(processedConditions, true).parenthesize()
+      return this.createOr(processedConditions).parenthesize()
     }
 
     if (condition instanceof Timestamp) {

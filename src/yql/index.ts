@@ -11,17 +11,27 @@ import {
   UserInput,
   VespaField,
 } from "./conditions"
-import { FieldName, FieldValue, TimestampRange, YqlCondition } from "./types"
+import {
+  FieldName,
+  FieldValue,
+  TimestampRange,
+  YqlCondition,
+  PermissionOptions,
+} from "./types"
 
-const and = (conditions: YqlCondition[], requirePermissions = false): And =>
-  new And(conditions, requirePermissions)
-const or = (conditions: YqlCondition[], requirePermissions = false): Or =>
-  new Or(conditions, requirePermissions)
+const and = (conditions: YqlCondition[]): And => new And(conditions)
+const or = (conditions: YqlCondition[]): Or => new Or(conditions)
 
 const andWithoutPermissions = (conditions: YqlCondition[]): And =>
-  new And(conditions, false)
+  new And(conditions, { requirePermissions: false })
 const orWithoutPermissions = (conditions: YqlCondition[]): Or =>
-  new Or(conditions, false)
+  new Or(conditions, { requirePermissions: false })
+
+const andWithPermissions = (conditions: YqlCondition[]): And =>
+  new And(conditions, { requirePermissions: true })
+const orWithPermissions = (conditions: YqlCondition[]): Or =>
+  new Or(conditions, { requirePermissions: true })
+
 const not = (condition: YqlCondition): Not => new Not(condition)
 const parenthesize = (condition: YqlCondition): Parenthesized =>
   new Parenthesized(condition)
@@ -64,6 +74,8 @@ export {
   or,
   andWithoutPermissions,
   orWithoutPermissions,
+  andWithPermissions,
+  orWithPermissions,
   not,
   parenthesize,
   timestamp,
