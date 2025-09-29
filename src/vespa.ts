@@ -2123,7 +2123,7 @@ export class VespaService {
     // App condition
     if (Array.isArray(app) && app.length > 0) {
       conditions.push(
-        app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or "),
+        `(${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`,
       )
     } else if (!Array.isArray(app) && app) {
       conditions.push(`app contains '${escapeYqlValue(app)}'`)
@@ -2139,7 +2139,9 @@ export class VespaService {
     // Entity condition
     if (Array.isArray(entity) && entity.length > 0) {
       conditions.push(
-        entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or "),
+        `(${entity
+          .map((e) => `entity contains '${escapeYqlValue(e)}'`)
+          .join(" or ")})`,
       )
     } else if (!Array.isArray(entity) && entity) {
       conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
