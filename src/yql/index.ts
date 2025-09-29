@@ -11,6 +11,7 @@ import {
   UserInput,
   VespaField,
   FuzzyContains,
+  SameElement,
 } from "./conditions"
 import {
   FieldName,
@@ -69,6 +70,9 @@ const lessThan = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.lessThan(field, value)
 const lessThanOrEqual = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.lessThanOrEqual(field, value)
+const inArray = (field: FieldName, value: FieldValue[]): VespaField =>
+  VespaField.in(field, value)
+
 const fuzzy = (
   field: string,
   value: string,
@@ -76,6 +80,8 @@ const fuzzy = (
   prefix: boolean = true,
 ): FuzzyContains => new FuzzyContains(field, value, maxEditDistance, prefix)
 
+const sameElement = (key: string, value: string): SameElement =>
+  new SameElement(key, value)
 export {
   and,
   or,
@@ -98,5 +104,7 @@ export {
   greaterThanOrEqual,
   lessThan,
   lessThanOrEqual,
+  inArray,
   fuzzy,
+  sameElement,
 }

@@ -37,11 +37,12 @@ export interface YqlBuilderOptions {
 }
 
 export type FieldName = string
-export type FieldValue = string | number | boolean
-export type LogicalOperator = "and" | "or"
+export type FieldValue = string | number | boolean | Object
+export type LogicalOperator = "and" | "or" | "not"
 export enum Operator {
   CONTAINS = "contains",
   MATCHES = "matches",
+  IN = "in",
   GREATER_THAN_OR_EQUAL = ">=",
   LESS_THAN_OR_EQUAL = "<=",
   EQUAL = "=",

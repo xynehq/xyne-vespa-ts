@@ -1774,7 +1774,7 @@ export class VespaService {
   }
 
   ifDocumentsExistInSchema = async (
-    schema: string,
+    schema: VespaSchema,
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
     return this.vespa
@@ -2618,7 +2618,7 @@ export class VespaService {
 
   getFolderItems = async (
     docIds: string[],
-    schema: string,
+    schema: VespaSchema,
     entity: string,
     email: string,
   ) => {

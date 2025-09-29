@@ -17,10 +17,13 @@ import {
   chatContainerSchema,
   chatMessageSchema,
   chatUserSchema,
+  mailSchema,
 } from "../types"
 import { getErrorMessage } from "../utils"
 import { handleVespaGroupResponse } from "../mappers"
 import type { ILogger } from "../types"
+import { YqlBuilder } from "../yql/yqlBuilder"
+import { contains, inArray, matches, or, sameElement } from "../yql"
 
 // Define EntityCounts type
 export interface EntityCounts {
@@ -718,13 +721,17 @@ class VespaClient {
       )
 
       // Construct the YQL query for this batch
-      const yqlIds = batchDocIds.map((id) => `"${id}"`).join(", ")
-      const yqlQuery = `select docId, updatedAt, permissions from chat_container where docId in (${yqlIds})`
+      const yql = YqlBuilder.create()
+        .select(["docId", "updatedAt", "permissions"])
+        .from(chatContainerSchema)
+        .where(inArray("docId", batchDocIds))
+        .build()
+
       const url = `${this.vespaEndpoint}/search/`
 
       try {
         const payload = {
-          yql: yqlQuery,
+          yql,
           hits: batchDocIds.length,
           maxHits: batchDocIds.length + 1,
         }
@@ -793,13 +800,16 @@ class VespaClient {
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
-    const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select docId, updatedAt from sources * where docId in (${yqlIds})`
+    const yql = YqlBuilder.create()
+      .select(["docId", "updatedAt"])
+      .from("*")
+      .where(inArray("docId", docIds))
+      .build()
     const url = `${this.vespaEndpoint}/search/`
 
     try {
       const payload = {
-        yql: yqlQuery,
+        yql,
         hits: docIds.length,
         maxHits: docIds.length + 1,
       }
@@ -866,13 +876,17 @@ class VespaClient {
     >
   > {
     // Construct the YQL query
-    const yqlIds = mailIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select docId, mailId, updatedAt,userMap from sources mail where mailId in (${yqlIds})`
+    const yql = YqlBuilder.create()
+      .select(["docId", "mailId", "updatedAt", "userMap"])
+      .from("mail")
+      .where(inArray("mailId", mailIds))
+      .build()
+
     const url = `${this.vespaEndpoint}/search/`
 
     try {
       const payload = {
-        yql: yqlQuery,
+        yql,
         hits: mailIds.length,
         maxHits: mailIds.length + 1,
       }
@@ -940,14 +954,17 @@ class VespaClient {
   }
 
   async ifDocumentsExistInSchema(
-    schema: string,
+    schema: VespaSchema,
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
-    const yqlIds = docIds.map((id) => `"${id}"`).join(", ")
-    const yqlQuery = `select docId, updatedAt from sources ${schema} where docId in (${yqlIds})`
+    const yql = YqlBuilder.create()
+      .select(["docId", "updatedAt"])
+      .from(schema)
+      .where(inArray("docId", docIds))
+      .build()
 
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=${docIds.length}`
+    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=${docIds.length}`
 
     try {
       const response = await this.fetchWithRetry(url, {
@@ -1065,9 +1082,12 @@ class VespaClient {
 
   async ifMailDocExist(email: string, docId: string): Promise<boolean> {
     // Construct the YQL query using userMap with sameElement
-    const yqlQuery = `select docId from mail where userMap contains sameElement(key contains "${email}", value contains "${docId}")`
-
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yqlQuery)}&hits=1&timeout=5s`
+    const yql = YqlBuilder.create()
+      .select("docId")
+      .from(mailSchema)
+      .where(contains("userMap", sameElement(email, docId)))
+      .build()
+    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=1&timeout=5s`
 
     try {
       const response = await this.fetchWithRetry(url, {
@@ -1095,52 +1115,6 @@ class VespaClient {
         error,
       )
       throw error
-    }
-  }
-  /**
-   * Get all documents where a specific field exists
-   * @param fieldName The name of the field that should exist
-   * @param options Configuration for Vespa
-   * @param limit Optional maximum number of results to return (default: 100)
-   * @param offset Optional offset for pagination (default: 0)
-   * @returns The search response containing matching documents
-   */
-  async getDocumentsWithField(
-    fieldName: string,
-    options: VespaConfigValues,
-    limit: number = 100,
-    offset: number = 0,
-    yql: string,
-  ): Promise<VespaSearchResponse> {
-    const { namespace, schema, cluster } = options
-
-    // Construct the search payload - using "unranked" profile to just fetch without scoring
-    const searchPayload = {
-      yql,
-      "ranking.profile": "unranked",
-      timeout: "5s",
-      hits: limit,
-      offset,
-      maxOffset: 1000000,
-    }
-
-    if (cluster) {
-      // @ts-ignore
-      searchPayload.cluster = cluster
-    }
-
-    try {
-      const response = await this.search<VespaSearchResponse>(searchPayload)
-
-      return response
-    } catch (error) {
-      const errMessage = getErrorMessage(error)
-      this.logger.error(
-        `Error retrieving documents with field ${fieldName}: ${errMessage}`,
-      )
-      throw new Error(
-        `Error retrieving documents with field ${fieldName}: ${errMessage}`,
-      )
     }
   }
 
@@ -1209,14 +1183,16 @@ class VespaClient {
   async getDocumentsBythreadId(
     threadId: string[],
   ): Promise<VespaSearchResponse> {
-    const yqlIds = threadId
-      .map((id) => `threadId contains '${id}'`)
-      .join(" or ")
-    const yqlQuery = `select * from sources ${chatMessageSchema} where (${yqlIds})`
+    const yqlIds = threadId.map((id) => contains("threadId", id))
+    const yql = YqlBuilder.create()
+      .from(chatMessageSchema)
+      .where(or(yqlIds))
+      .build()
+
     const url = `${this.vespaEndpoint}/search/`
     try {
       const payload = {
-        yql: yqlQuery,
+        yql,
       }
 
       const response = await this.fetchWithRetry(url, {
@@ -1246,15 +1222,17 @@ class VespaClient {
     threadIds: string[],
     email: string,
   ): Promise<VespaSearchResponse> {
-    const yqlIds = threadIds
-      .map((id) => `threadId contains '${id}'`)
-      .join(" or ")
+    const yqlIds = threadIds.map((id) => contains("threadId", id))
     // Include permissions check to ensure user has access to these emails
-    const yqlQuery = `select * from sources mail where (${yqlIds}) and permissions contains @email`
+    const yql = YqlBuilder.create({ email })
+      .from(mailSchema)
+      .where(or(yqlIds))
+      .build()
+
     const url = `${this.vespaEndpoint}/search/`
     try {
       const payload = {
-        yql: yqlQuery,
+        yql,
         email: email, // Pass the user's email for permissions check
         hits: 200, // Increased limit to fetch more thread emails
         "ranking.profile": "unranked", // Use unranked for simple retrieval
@@ -1296,11 +1274,16 @@ class VespaClient {
   }
 
   async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
-    const yqlQuery = `select docId from sources ${chatUserSchema} where email contains '${email}'`
+    const yql = YqlBuilder.create()
+      .select("docId")
+      .from(chatUserSchema)
+      .where(contains("email", email))
+      .build()
+
     const url = `${this.vespaEndpoint}/search/`
     try {
       const payload = {
-        yql: yqlQuery,
+        yql,
       }
 
       const response = await this.fetchWithRetry(url, {
@@ -1329,13 +1312,18 @@ class VespaClient {
   async getChatContainerIdByChannelName(
     channelName: string,
   ): Promise<VespaSearchResponse> {
-    const yqlQuery = `select docId from sources ${chatContainerSchema} where name contains '${channelName}'`
+    const yql = YqlBuilder.create()
+      .select("docId")
+      .from(chatContainerSchema)
+      .where(contains("name", channelName))
+      .build()
+
     const url = `${this.vespaEndpoint}/search/`
     try {
       const payload = {
-        yql: yqlQuery,
+        yql,
       }
-      console.log(yqlQuery)
+      console.log(yql)
 
       const response = await this.fetchWithRetry(url, {
         method: "POST",
@@ -1364,24 +1352,32 @@ class VespaClient {
 
   async getFolderItem(
     docId: string[],
-    schema: string,
+    schema: VespaSchema,
     entity: string,
     email: string,
   ): Promise<VespaSearchResponse> {
-    const yqlIds = docId.map((id) => `parentId contains '${id}'`).join(" or ")
     let yqlQuery
+    const yqlBuilder = YqlBuilder.create({ email }).from(schema)
     if (!docId.length) {
       // "My Drive" is the special root directory name that Google Drive uses internally
       // while Ingestion we don't get the My Drive Folder , but all its children has parent Name as My Drive
       // to get the items inside My Drive we are using the regex match
-      yqlQuery = `select * from sources ${schema} where (metadata contains '{\"parents\":[]}' or (metadata matches 'My Drive')) and (permissions contains '${email}' or ownerEmail contains '${email}') limit 400 `
+      yqlBuilder
+        .where(
+          or([
+            contains("metadata", '{\"parents\":[]}'),
+            matches("metadata", "My Drive"),
+          ]),
+        )
+        .limit(400)
     } else {
-      yqlQuery = `select * from sources ${schema} where ${yqlIds} and (permissions contains '${email}' or ownerEmail contains '${email}')`
+      const yqlIds = docId.map((id) => contains("parentId", id))
+      yqlBuilder.where(or(yqlIds)).limit(400)
     }
     const url = `${this.vespaEndpoint}/search/`
     try {
       const payload = {
-        yql: yqlQuery,
+        yql: yqlBuilder.build(),
       }
 
       const response = await this.fetchWithRetry(url, {

@@ -70,6 +70,18 @@ export class VespaField extends BaseCondition {
   }
 
   toString(): string {
+    if (this.operator === Operator.IN) {
+      if (Array.isArray(this.value)) {
+        const escapedValues = this.value
+          .map((val) =>
+            typeof val === "string" ? `'${escapeYqlValue(val)}'` : String(val),
+          )
+          .join(", ")
+        return `${this.field} ${this.operator} (${escapedValues})`
+      } else {
+        throw new Error("IN operator requires an array of values")
+      }
+    }
     const escapedValue =
       typeof this.value === "string"
         ? `'${escapeYqlValue(this.value)}'`
@@ -104,6 +116,10 @@ export class VespaField extends BaseCondition {
   static lessThanOrEqual(field: FieldName, value: FieldValue): VespaField {
     return new VespaField(field, Operator.LESS_THAN_OR_EQUAL, value)
   }
+
+  static in(field: FieldName, value: FieldValue[]): VespaField {
+    return new VespaField(field, Operator.IN, value)
+  }
 }
 
 /**
@@ -122,6 +138,24 @@ export class FuzzyContains extends BaseCondition {
 
   toString(): string {
     return `${this.field} contains ({maxEditDistance: ${this.maxEditDistance}, prefix: ${this.prefix}} fuzzy(${this.queryVar}))`
+  }
+}
+
+/**
+ * SameElement condition for YQL queries that match documents where specified key-value pairs
+ * occur within the same element of a structured field (like arrays or maps).
+ * Example output: 'sameElement(key contains "fieldName", value contains "fieldValue")'
+ */
+export class SameElement extends BaseCondition {
+  constructor(
+    private key: string,
+    private values: string,
+  ) {
+    super()
+  }
+
+  toString(): string {
+    return `sameElement(key contains "${this.key}", value contains "${this.values}")`
   }
 }
 
