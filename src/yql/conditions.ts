@@ -107,6 +107,25 @@ export class VespaField extends BaseCondition {
 }
 
 /**
+ * FuzzyContains condition for YQL fuzzy search queries.
+ * Example output: 'field contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))'
+ */
+export class FuzzyContains extends BaseCondition {
+  constructor(
+    private field: string,
+    private queryVar: string = "@query",
+    private maxEditDistance: number = 2,
+    private prefix: boolean = true,
+  ) {
+    super()
+  }
+
+  toString(): string {
+    return `${this.field} contains ({maxEditDistance: ${this.maxEditDistance}, prefix: ${this.prefix}} fuzzy(${this.queryVar}))`
+  }
+}
+
+/**
  * User input condition for text search
  */
 export class UserInput extends BaseCondition {

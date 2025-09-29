@@ -47,7 +47,7 @@ import {
   processGmailIntent,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
-import { And, Or } from "./yql/conditions"
+import { And, Or, FuzzyContains } from "./yql/conditions"
 import {
   or,
   and,
@@ -59,6 +59,7 @@ import {
   greaterThanOrEqual,
   lessThanOrEqual,
   andWithoutPermissions,
+  fuzzy,
 } from "./yql"
 import {
   ErrorDeletingDocuments,
@@ -253,53 +254,36 @@ export class VespaService {
     email: string,
     limit: number = 5,
   ): Promise<VespaAutocompleteResponse> => {
-    const sources = this.getSchemaSourcesString()
-      .split(", ")
-      .filter((s) => s !== chatMessageSchema)
-      .join(", ")
+    const sources = [
+      ...new Set<VespaSchema>([...this.getSchemaSources(), userQuerySchema]),
+    ].filter((s) => s !== chatMessageSchema)
 
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
     // the drawback here is that for user field we will get duplicates, for the same
     // email one contact and one from user directory
-    const yqlQuery = `select * from sources ${sources}, ${userQuerySchema}
-    where
-        (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
-        or
-        (
-            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and owner contains @email)
-            or
-            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and owner contains @email)
-        )
-        or
-        (
-            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and app contains "${Apps.GoogleWorkspace}")
-            or
-            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and app contains "${Apps.GoogleWorkspace}")
-        )
-        or
-        (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
-        or
-        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
-        or
-        (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and owner contains @email)
-        or
-        (
-          (
-            name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or
-            email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-          )
-          and permissions contains @email
-        )
-        `
-
+    const yql = YqlBuilder.create({ email })
+      .from(sources)
+      .where(
+        or([
+          fuzzy("title_fuzzy", "@query"),
+          fuzzy("name_fuzzy", "@query"),
+          fuzzy("email_fuzzy", "@query"),
+          // skip permission check for google workspace app
+          Or.withoutPermissions([
+            And.withoutPermissions([
+              fuzzy("name_fuzzy", "@query"),
+              contains("app", Apps.GoogleWorkspace),
+            ]),
+            And.withoutPermissions([
+              fuzzy("email_fuzzy", "@query"),
+              contains("app", Apps.GoogleWorkspace),
+            ]),
+          ]),
+          fuzzy("subject_fuzzy", "@query"),
+          fuzzy("query_text", "@query"),
+        ]),
+      )
+    const yqlQuery = yql.build()
     const searchPayload = {
       yql: yqlQuery,
       query,
@@ -1541,30 +1525,6 @@ export class VespaService {
       })
   }
 
-  searchVespaThroughAgent = async (
-    query: string,
-    email: string,
-    apps: Apps[] | null,
-    {
-      alpha = 0.5,
-      limit = this.config.page,
-      offset = 0,
-      rankProfile = SearchModes.NativeRank,
-      requestDebug = false,
-      span = null,
-      maxHits = 400,
-    }: Partial<VespaQueryConfig>,
-  ): Promise<VespaSearchResponse> => {
-    if (!query?.trim()) {
-      throw new Error("Query cannot be empty")
-    }
-
-    if (!email?.trim()) {
-      throw new Error("Email cannot be empty")
-    }
-    return {} as VespaSearchResponse
-  }
-
   searchVespaAgent = async (
     query: string,
     email: string,
@@ -1710,29 +1670,6 @@ export class VespaService {
       })
   }
 
-  GetDocumentWithField = async (
-    fieldName: string,
-    schema: VespaSchema,
-    limit: number = 100,
-    offset: number = 0,
-  ): Promise<VespaSearchResponse> => {
-    const opts = { namespace: this.config.namespace, schema }
-    const yql = YqlBuilder.create()
-      .from(schema)
-      .where(matches(fieldName, "."))
-      .build()
-
-    return this.vespa
-      .getDocumentsWithField(fieldName, opts, limit, offset, yql)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error fetching documents with field: ${fieldName}`,
-        )
-        throw new Error(getErrorMessage(error))
-      })
-  }
-
   UpdateDocumentPermissions = async (
     schema: VespaSchema,
     docId: string,
@@ -1851,46 +1788,6 @@ export class VespaService {
       })
   }
 
-  getNDocuments = async (n: number) => {
-    // Encode the YQL query to ensure it's URL-safe
-    const yql = encodeURIComponent(
-      `select * from sources ${fileSchema} where true`,
-    )
-
-    // Construct the search URL with necessary query parameters
-    const url = `${this.vespaEndpoint}/search/?yql=${yql}&hits=${n}&cluster=${this.config.cluster}`
-
-    try {
-      const response: Response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      })
-
-      if (!response.ok) {
-        const errorText = response.statusText
-        throw new Error(
-          `Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`,
-        )
-      }
-
-      const data = await response.json()
-
-      return data
-    } catch (error) {
-      const errMessage = getErrorMessage(error)
-      this.logger.error(
-        `Error retrieving document count: , ${errMessage}`,
-        error,
-      )
-      throw new ErrorRetrievingDocuments({
-        cause: error as Error,
-        sources: "file",
-      })
-    }
-  }
-
   hashQuery = (query: string) => {
     return crypto.createHash("sha256").update(query.trim()).digest("hex")
   }
@@ -1948,14 +1845,14 @@ export class VespaService {
     // Construct YQL conditions for names and emails
     const nameConditions = mentionedNames.map((name) => {
       // For fuzzy search
-      return `(name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy("${name}")))`
+      return fuzzy("name", name)
       // For exact match, use:
       // return `(name contains "${name}")`;
     })
 
     const emailConditions = mentionedEmails.map((email) => {
       // For fuzzy search
-      return `(email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy("${email}")))`
+      return fuzzy("email", email)
       // For exact match, use:
       // return `(email contains "${email}")`;
     })

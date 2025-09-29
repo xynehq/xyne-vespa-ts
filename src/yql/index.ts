@@ -10,6 +10,7 @@ import {
   Timestamp,
   UserInput,
   VespaField,
+  FuzzyContains,
 } from "./conditions"
 import {
   FieldName,
@@ -68,6 +69,12 @@ const lessThan = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.lessThan(field, value)
 const lessThanOrEqual = (field: FieldName, value: FieldValue): VespaField =>
   VespaField.lessThanOrEqual(field, value)
+const fuzzy = (
+  field: string,
+  value: string,
+  maxEditDistance: number = 2,
+  prefix: boolean = true,
+): FuzzyContains => new FuzzyContains(field, value, maxEditDistance, prefix)
 
 export {
   and,
@@ -91,4 +98,5 @@ export {
   greaterThanOrEqual,
   lessThan,
   lessThanOrEqual,
+  fuzzy,
 }
