@@ -803,20 +803,31 @@ export class VespaService {
       )`
     }
 
-    const buildCollectionConditions = (processedSelections: CollectionVespaIds) => {
+    const buildCollectionConditions = (
+      processedSelections: CollectionVespaIds,
+    ) => {
       let conditions: string[] = []
 
-      if (processedSelections.collectionIds && processedSelections.collectionIds.length > 0) {
+      if (
+        processedSelections.collectionIds &&
+        processedSelections.collectionIds.length > 0
+      ) {
         const collectionCondition = `(${processedSelections.collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(collectionCondition)
       }
 
-      if (processedSelections.collectionFolderIds && processedSelections.collectionFolderIds.length > 0) {
+      if (
+        processedSelections.collectionFolderIds &&
+        processedSelections.collectionFolderIds.length > 0
+      ) {
         const folderCondition = `(${processedSelections.collectionFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
         conditions.push(folderCondition)
       }
 
-      if (processedSelections.collectionFileIds && processedSelections.collectionFileIds.length > 0) {
+      if (
+        processedSelections.collectionFileIds &&
+        processedSelections.collectionFileIds.length > 0
+      ) {
         const fileCondition = `(${processedSelections.collectionFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
         conditions.push(fileCondition)
       }
@@ -874,9 +885,12 @@ export class VespaService {
               sources.push(dataSourceFileSchema)
             break
           case Apps.KnowledgeBase:
-            const collectionConditions = buildCollectionConditions(processedCollectionSelections)
+            const collectionConditions = buildCollectionConditions(
+              processedCollectionSelections,
+            )
             if (collectionConditions.length > 0) {
-              const collectionQuery = buildCollectionFileYQL(collectionConditions)
+              const collectionQuery =
+                buildCollectionFileYQL(collectionConditions)
               appQueries.push(collectionQuery)
               if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
             } else {
@@ -1663,7 +1677,7 @@ export class VespaService {
       channelIds = [],
       driveIds = [], // docIds
       selectedItem = {},
-      processedCollectionSelections = {}
+      processedCollectionSelections = {},
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1684,7 +1698,7 @@ export class VespaService {
       channelIds,
       processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
-      selectedItem
+      selectedItem,
     )
 
     const hybridDefaultPayload = {
@@ -2137,7 +2151,7 @@ export class VespaService {
     // App condition
     if (Array.isArray(app) && app.length > 0) {
       conditions.push(
-        app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or "),
+        `(${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`,
       )
     } else if (!Array.isArray(app) && app) {
       conditions.push(`app contains '${escapeYqlValue(app)}'`)
@@ -2153,9 +2167,9 @@ export class VespaService {
     // Entity condition
     if (Array.isArray(entity) && entity.length > 0) {
       conditions.push(
-        entity
+        `(${entity
           .map((e) => `entity contains '${escapeYqlValue(e)}'`)
-          .join(" or "),
+          .join(" or ")})`,
       )
     } else if (!Array.isArray(entity) && entity) {
       conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
@@ -2868,7 +2882,7 @@ export class VespaService {
   searchCollectionRAG = async (
     query: string,
     docIds?: string[],
-    parentDocIds? : string[],
+    parentDocIds?: string[],
     limit: number = 10,
     offset: number = 0,
     alpha: number = 0.5,
@@ -2891,10 +2905,10 @@ export class VespaService {
       docIdFilter = `and (${docIdConditions})`
     }
     let parentDocIdFilter = ""
-    if(parentDocIds && parentDocIds.length > 0){
+    if (parentDocIds && parentDocIds.length > 0) {
       const parentDocIdConditions = parentDocIds
-        .map((id) => `clFd contains '${escapeYqlValue(id.trim())}'`) 
-        .join(" or ")  
+        .map((id) => `clFd contains '${escapeYqlValue(id.trim())}'`)
+        .join(" or ")
       parentDocIdFilter = `and (${parentDocIdConditions})`
     }
 
@@ -2915,17 +2929,19 @@ export class VespaService {
       query: query.trim(),
       "ranking.profile": rankProfile,
       "input.query(e)": "embed(@query)",
-      "input.query(alpha)": alpha, 
+      "input.query(alpha)": alpha,
       hits: limit,
       offset,
       timeout: "30s",
     }
 
-
     try {
-      const response = await this.vespa.search<VespaSearchResponse>(searchPayload)
-      this.logger.info(`[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${query.trim()}"`)
-      
+      const response =
+        await this.vespa.search<VespaSearchResponse>(searchPayload)
+      this.logger.info(
+        `[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${query.trim()}"`,
+      )
+
       return response
     } catch (error) {
       const searchError = new ErrorPerformingSearch({
@@ -2937,5 +2953,4 @@ export class VespaService {
       throw searchError
     }
   }
-
 }
