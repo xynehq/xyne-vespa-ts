@@ -472,7 +472,7 @@ export class YqlBuilder {
     if (this.withPermissions && this.userEmail) {
       const processedCondition =
         this.applyTopLevelPermissions(combinedConditions)
-      return processedCondition.toString()
+      return andWithPermissions([processedCondition]).toString()
     }
 
     return this.parenthesisConditions(combinedConditions).toString()
