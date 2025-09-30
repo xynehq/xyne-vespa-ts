@@ -237,7 +237,7 @@ export type ScoredChunk = z.infer<typeof scoredChunk>
 
 // Define ChunkMetadata type for OCR processing
 export const ChunkMetadata = z.object({
-  index: z.number(),
+  chunk_index: z.number(),
   page_number: z.number(),
   block_labels: z.array(z.string()),
 })
