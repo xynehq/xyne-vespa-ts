@@ -528,7 +528,7 @@ export class YqlBuilder {
         const processedConditions = condition
           .getConditions()
           .map((child) => this.recursivelyApplyPermissions(child))
-        return and(processedConditions).parenthesize()
+        return And.withoutPermissions(processedConditions).parenthesize()
       }
 
       const processedConditions = condition
@@ -546,7 +546,7 @@ export class YqlBuilder {
         const processedConditions = condition
           .getConditions()
           .map((child) => this.recursivelyApplyPermissions(child))
-        return orWithoutPermissions(processedConditions).parenthesize()
+        return Or.withoutPermissions(processedConditions).parenthesize()
       }
 
       // First, recursively process any nested OR conditions within this OR
