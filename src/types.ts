@@ -235,6 +235,14 @@ export const scoredChunk = z.object({
 })
 export type ScoredChunk = z.infer<typeof scoredChunk>
 
+// Define ChunkMetadata type for OCR processing
+export const ChunkMetadata = z.object({
+  chunk_index: z.number(),
+  page_number: z.number(),
+  block_labels: z.array(z.string()),
+})
+export type ChunkMetadata = z.infer<typeof ChunkMetadata>
+
 export const defaultVespaFieldsSchema = z.object({
   relevance: z.number(),
   source: z.string(),
@@ -600,6 +608,8 @@ export const VespaKbFileSchemaBase = z.object({
   image_chunks: z.array(z.string()),
   chunks_pos: z.array(z.number()),
   image_chunks_pos: z.array(z.number()),
+  chunks_map: z.array(ChunkMetadata),
+  image_chunks_map: z.array(ChunkMetadata),
   metadata: z.string(),
   createdBy: z.string(),
   duration: z.number(),
