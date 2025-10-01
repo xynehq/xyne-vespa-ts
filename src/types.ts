@@ -638,7 +638,11 @@ export const VespaKbFileSearchSchema = VespaKbFileSchemaBase.extend({
   .merge(defaultVespaFieldsSchema)
   .extend({
     chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    image_chunks_summary: z
+      .array(z.union([z.string(), scoredChunk]))
+      .optional(),
     chunks_pos_summary: z.array(z.number()).optional(),
+    image_chunks_pos_summary: z.array(z.number()).optional(),
   })
 export type VespaKbFileSearch = z.infer<typeof VespaKbFileSearchSchema>
 
