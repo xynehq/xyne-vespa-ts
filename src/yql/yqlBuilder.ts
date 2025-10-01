@@ -462,17 +462,18 @@ export class YqlBuilder {
 
     let combinedConditions: YqlCondition
 
+    // Don't add permissions here - let recursivelyApplyPermissions handle it
     if (this.whereConditions.length === 1) {
       combinedConditions = this.whereConditions[0]!
     } else {
-      combinedConditions = andWithPermissions(this.whereConditions)
+      combinedConditions = Or.withoutPermissions(this.whereConditions)
     }
 
     // Apply permissions only at the top level if permissions are enabled
     if (this.withPermissions && this.userEmail) {
       const processedCondition =
         this.applyTopLevelPermissions(combinedConditions)
-      return andWithPermissions([processedCondition]).toString()
+      return processedCondition.toString()
     }
 
     return this.parenthesisConditions(combinedConditions).toString()
@@ -527,7 +528,7 @@ export class YqlBuilder {
         const processedConditions = condition
           .getConditions()
           .map((child) => this.recursivelyApplyPermissions(child))
-        return andWithoutPermissions(processedConditions).parenthesize()
+        return and(processedConditions).parenthesize()
       }
 
       const processedConditions = condition
@@ -535,7 +536,7 @@ export class YqlBuilder {
         .map((child) => this.recursivelyApplyPermissions(child))
       // won't require permissions for AND children as parent OR will handle it
       // Top level ANDs will contains permissions
-      return and(processedConditions).parenthesize()
+      return this.createAnd(processedConditions).parenthesize()
     }
 
     // If it's an Or condition, wrap it with permissions and process children
@@ -559,7 +560,7 @@ export class YqlBuilder {
     if (condition instanceof Timestamp) {
       return condition.parenthesize()
     }
-    // Leaf nodes, return as-is (permissions will be added by parent OR)
+    // Leaf nodes, return as-is (permissions will be added by parent)
     return condition
   }
 
