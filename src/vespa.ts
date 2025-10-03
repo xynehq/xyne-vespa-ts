@@ -22,6 +22,7 @@ import {
   chatContainerSchema,
   KbItemsSchema,
   type CollectionVespaIds,
+  AttachmentEntity,
 } from "./types"
 import type {
   VespaAutocompleteResponse,
@@ -105,6 +106,34 @@ export class VespaService {
     // Initialize Vespa clients
     this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config)
   }
+
+  private filterAttachmentApp = (app: Apps | Apps[] | null): Apps | Apps[] | null => {
+    if (!app) {
+      return app
+    }
+
+    if (Array.isArray(app)) {
+      const filteredApps = app.filter(a => a !== Apps.Attachment)
+      return filteredApps.length === 0 ? null : filteredApps
+    }
+
+    return app === Apps.Attachment ? null : app
+  }
+
+  private filterAttachmentEntity = (entity: Entity | Entity[] | null): Entity | Entity[] | null => {
+    if (!entity) {
+      return entity
+    }
+
+    if (Array.isArray(entity)) {
+      const filteredEntities = entity.filter(e => !Object.values(AttachmentEntity).includes(e as AttachmentEntity))
+      return filteredEntities.length === 0 ? null : filteredEntities
+    }
+
+    return Object.values(AttachmentEntity).includes(entity as AttachmentEntity) ? null : entity
+  }
+
+  
 
   getSchemaSources(): string {
     return this.schemaSources.join(", ")
@@ -344,19 +373,19 @@ export class VespaService {
     // ToDo we have to handle this filter as we are applying multiple times app filtering
     // Helper function to build app/entity filter
     const buildAppEntityFilter = () => {
-      return `${
-        app
-          ? (Array.isArray(app) && app.length > 0)
-            ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-            : "and app contains @app"
-          : ""
-      } ${
-        entity
-          ? Array.isArray(entity) && entity.length > 0
-            ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
-            : "and entity contains @entity"
-          : ""
-      }`.trim()
+      const appFilter = app
+        ? Array.isArray(app) && app.length > 0
+          ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
+          : "and app contains @app"
+        : `and !(app contains '${Apps.Attachment}')`
+
+      const entityFilter = entity
+        ? Array.isArray(entity) && entity.length > 0
+          ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
+          : "and entity contains @entity"
+        : `and !(${Object.values(AttachmentEntity).map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
+
+      return `${appFilter} ${entityFilter}`.trim()
     }
 
     // Helper function to build exclusion condition
@@ -1198,6 +1227,11 @@ export class VespaService {
     const textEmbeddingsQuery = buildTextEmbeddingsYQL()
     const googleWorkspaceQuery = buildGoogleWorkspaceYQL()
     const ownerQuery = buildOwnerYQL()
+    const excludeAttachment = `!(
+      app contains '${Apps.Attachment}'
+      or
+      (${Object.values(AttachmentEntity).map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})
+    )`
 
     return {
       profile: SearchModes.NativeRank,
@@ -1210,7 +1244,7 @@ export class VespaService {
               ${googleWorkspaceQuery}
               or
               ${ownerQuery}
-            )
+            ) and ${excludeAttachment}
             limit 0
             | all(
                 group(app) each(
@@ -1400,8 +1434,12 @@ export class VespaService {
       isGmailConnected,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
+    // Filter out attachment app and entities if present
+    const filteredApp = this.filterAttachmentApp(app)
+    const filteredEntity = this.filterAttachmentEntity(entity)
+
     // either no prod config, or prod call errored
-    return await this._searchVespa(query, email, app, entity, {
+    return await this._searchVespa(query, email, filteredApp, filteredEntity, {
       alpha,
       limit,
       offset,
@@ -1683,6 +1721,11 @@ export class VespaService {
     // Determine the timestamp cutoff based on lastUpdated
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
+
+    // Filter out attachment app and entities if present
+    app = this.filterAttachmentApp(app)
+    entity = this.filterAttachmentEntity(entity)
+    Apps = this.filterAttachmentApp(Apps) as Apps[] | null
 
     let { yql, profile } = this.HybridDefaultProfileForAgent(
       limit,
