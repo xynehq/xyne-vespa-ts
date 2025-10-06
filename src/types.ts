@@ -196,7 +196,7 @@ const NotionEntitySchema = z.nativeEnum(NotionEntity)
 export type MicrosoftPeopleEntityType = z.infer<
   typeof MicrosoftPeopleEntitySchema
 >
-
+console.log("FROM VESPA TS")
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
@@ -238,7 +238,7 @@ export type ScoredChunk = z.infer<typeof scoredChunk>
 // Define ChunkMetadata type for OCR processing
 export const ChunkMetadata = z.object({
   chunk_index: z.number(),
-  page_number: z.number(),
+  page_numbers: z.array(z.number()),
   block_labels: z.array(z.string()),
 })
 export type ChunkMetadata = z.infer<typeof ChunkMetadata>
