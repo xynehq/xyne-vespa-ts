@@ -1,7 +1,5 @@
 import {
   Apps,
-  CalendarEntity,
-  DriveEntity,
   eventSchema,
   MailEntity,
   fileSchema,
@@ -35,12 +33,7 @@ import type {
   VespaEvent,
   VespaUserQueryHistory,
   VespaSchema,
-  VespaMailAttachment,
-  VespaChatContainer,
   Inserts,
-  VespaChatUserSearchSchema,
-  VespaSearchResults,
-  ChatUserCore,
   VespaQueryConfig,
   GetItemsParams,
   GetThreadItemsParams,
@@ -49,9 +42,25 @@ import { SearchModes } from "./types"
 import {
   dateToUnixTimestamp,
   escapeYqlValue,
+  formatYqlToReadable,
   getErrorMessage,
   processGmailIntent,
 } from "./utils"
+import { YqlBuilder } from "./yql/yqlBuilder"
+import { And, Or, FuzzyContains } from "./yql/conditions"
+import {
+  or,
+  and,
+  userInput,
+  nearestNeighbor,
+  timestamp,
+  contains,
+  matches,
+  greaterThanOrEqual,
+  lessThanOrEqual,
+  andWithoutPermissions,
+  fuzzy,
+} from "./yql"
 import {
   ErrorDeletingDocuments,
   ErrorRetrievingDocuments,
@@ -62,7 +71,8 @@ import crypto from "crypto"
 import VespaClient from "./client/vespaClient"
 import pLimit from "p-limit"
 import type { ILogger, VespaConfig, VespaDependencies } from "./types"
-import { is } from "zod/locales"
+import { YqlCondition } from "./yql/types"
+import { off } from "process"
 
 type YqlProfile = {
   profile: SearchModes
@@ -89,13 +99,13 @@ const AllSources = [
   datasourceSchema,
   dataSourceFileSchema,
   KbItemsSchema,
-]
+] as VespaSchema[]
 
 export class VespaService {
   private logger: ILogger
   private config: VespaConfig
   private vespa: VespaClient
-  private schemaSources: string[]
+  private schemaSources: VespaSchema[]
   private vespaEndpoint: string
   constructor(dependencies: VespaDependencies) {
     this.logger = dependencies.logger.child({ module: "vespa" })
@@ -106,7 +116,11 @@ export class VespaService {
     this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config)
   }
 
-  getSchemaSources(): string {
+  getSchemaSources(): VespaSchema[] {
+    return this.schemaSources
+  }
+
+  getSchemaSourcesString(): string {
     return this.schemaSources.join(", ")
   }
   /**
@@ -123,7 +137,7 @@ export class VespaService {
         this.logger.error(`Deleting documents failed with error:`, error)
         throw new ErrorDeletingDocuments({
           cause: error as Error,
-          sources: this.getSchemaSources(),
+          sources: this.getSchemaSourcesString(),
         })
       })
   }
@@ -240,53 +254,36 @@ export class VespaService {
     email: string,
     limit: number = 5,
   ): Promise<VespaAutocompleteResponse> => {
-    const sources = this.getSchemaSources()
-      .split(", ")
-      .filter((s) => s !== chatMessageSchema)
-      .join(", ")
+    const sources = [
+      ...new Set<VespaSchema>([...this.getSchemaSources(), userQuerySchema]),
+    ].filter((s) => s !== chatMessageSchema)
 
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
     // the drawback here is that for user field we will get duplicates, for the same
     // email one contact and one from user directory
-    const yqlQuery = `select * from sources ${sources}, ${userQuerySchema}
-    where
-        (title_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
-        or
-        (
-            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and owner contains @email)
-            or
-            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and owner contains @email)
-        )
-        or
-        (
-            (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and app contains "${Apps.GoogleWorkspace}")
-            or
-            (email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-            and app contains "${Apps.GoogleWorkspace}")
-        )
-        or
-        (subject_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
-        or
-        (name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and permissions contains @email)
-        or
-        (query_text contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-        and owner contains @email)
-        or
-        (
-          (
-            name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query)) or
-            email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy(@query))
-          )
-          and permissions contains @email
-        )
-        `
-
+    const yql = YqlBuilder.create({ email })
+      .from(sources)
+      .where(
+        or([
+          fuzzy("title_fuzzy", "@query"),
+          fuzzy("name_fuzzy", "@query"),
+          fuzzy("email_fuzzy", "@query"),
+          // skip permission check for google workspace app
+          Or.withoutPermissions([
+            And.withoutPermissions([
+              fuzzy("name_fuzzy", "@query"),
+              contains("app", Apps.GoogleWorkspace),
+            ]),
+            And.withoutPermissions([
+              fuzzy("email_fuzzy", "@query"),
+              contains("app", Apps.GoogleWorkspace),
+            ]),
+          ]),
+          fuzzy("subject_fuzzy", "@query"),
+          fuzzy("query_text", "@query"),
+        ]),
+      )
+    const yqlQuery = yql.build()
     const searchPayload = {
       yql: yqlQuery,
       query,
@@ -317,7 +314,6 @@ export class VespaService {
     })
   }
 
-  // TODO: it seems the owner part is complicating things
   HybridDefaultProfile = (
     hits: number,
     app: Apps | Apps[] | null,
@@ -328,177 +324,58 @@ export class VespaService {
     notInMailLabels?: string[],
     excludedApps?: Apps[],
     intent?: Intent | null,
+    userEmail?: string,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
+    try {
+      const availableSources = this.getAvailableSources(excludedApps)
+      const includedApps = this.getIncludedApps(excludedApps)
+
+      const appQueries = this.buildAppSpecificQueries(
+        includedApps,
+        hits,
+        app,
+        entity,
+        timestampRange,
+        notInMailLabels,
+        intent,
+      )
+
+      const yqlBuilder = YqlBuilder.create({
+        email: userEmail,
+        sources: availableSources,
+        targetHits: hits,
+      })
+
+      yqlBuilder.from(availableSources)
+      if (appQueries.length > 0) {
+        const combinedCondition = or(appQueries)
+        yqlBuilder.where(combinedCondition)
       }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
+
+      if (app !== null && app !== undefined) {
+        yqlBuilder.filterByApp(app)
       }
-      return conditions.join(" and ")
-    }
 
-    // ToDo we have to handle this filter as we are applying multiple times app filtering
-    // Helper function to build app/entity filter
-    const buildAppEntityFilter = () => {
-      return `${
-        app
-          ? (Array.isArray(app) && app.length > 0)
-            ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-            : "and app contains @app"
-          : ""
-      } ${
-        entity
-          ? Array.isArray(entity) && entity.length > 0
-            ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
-            : "and entity contains @entity"
-          : ""
-      }`.trim()
-    }
+      if (entity !== null && entity !== undefined) {
+        yqlBuilder.filterByEntity(entity)
+      }
 
-    // Helper function to build exclusion condition
-    const buildExclusionCondition = () => {
-      if (!excludedIds || excludedIds.length === 0) return ""
-      return excludedIds.map((id) => `docId contains '${id}'`).join(" or ")
-    }
+      if (excludedIds && excludedIds.length > 0) {
+        yqlBuilder.excludeDocIds(excludedIds)
+      }
 
-    // Helper function to build mail label query
-    const buildMailLabelQuery = () => {
-      if (!notInMailLabels || notInMailLabels.length === 0) return ""
-      return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+      return yqlBuilder.buildProfile(profile)
+    } catch (error) {
+      this.logger.error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
+      throw new Error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
     }
-    const intentFilter = intent ? this.buildIntentFilter(intent) : ""
+  }
 
-    // App-specific YQL builders
-    const buildGoogleWorkspaceYQL = () => {
-      const userTimestamp = buildTimestampConditions(
-        "creationTime",
-        "creationTime",
-      )
-      const appOrEntityFilter = buildAppEntityFilter()
-      const hasAppOrEntity = !!(app || entity)
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${userTimestamp.length ? `and (${userTimestamp})` : ""}
-        ${
-          !hasAppOrEntity
-            ? `and app contains "${Apps.GoogleWorkspace}"`
-            : `${appOrEntityFilter} and permissions contains @email`
-        }
-        ${intentFilter}
-      )
-      or
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        and owner contains @email
-        ${userTimestamp.length ? `and ${userTimestamp}` : ""}
-        ${appOrEntityFilter}
-      )`
-    }
+  private getAvailableSources(excludedApps?: Apps[]): VespaSchema[] {
+    let sources = this.schemaSources
 
-    const buildGmailYQL = () => {
-      const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
-      const appOrEntityFilter = buildAppEntityFilter()
-      const mailLabelQuery = buildMailLabelQuery()
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${mailTimestamp.length ? `and (${mailTimestamp})` : ""}
-        and permissions contains @email
-        ${mailLabelQuery}
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-
-    const buildDefaultYQL = () => {
-      const appOrEntityFilter = buildAppEntityFilter()
-      const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      return ` 
-  (
-      (
-            ({targetHits:${hits}} userInput(@query))
-            or
-            ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-      )
-      and (permissions contains @email or owner contains @email)
-      ${timestamp.length ? `and (${timestamp})` : ""}
-      ${appOrEntityFilter}
-      ${intentFilter}
-  )
-  `
-    }
-
-    const buildGoogleDriveYQL = () => {
-      const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      const appOrEntityFilter = buildAppEntityFilter()
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${fileTimestamp.length ? `and (${fileTimestamp})` : ""}
-        and permissions contains @email
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-
-    const buildGoogleCalendarYQL = () => {
-      const eventTimestamp = buildTimestampConditions("startTime", "startTime")
-      const appOrEntityFilter = buildAppEntityFilter()
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${eventTimestamp.length ? `and (${eventTimestamp})` : ""}
-        and permissions contains @email
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-
-    const buildSlackYQL = () => {
-      const appOrEntityFilter = buildAppEntityFilter()
-      const timestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        ${timestamp.length ? `and (${timestamp})` : ""}
-        ${appOrEntityFilter}
-        and permissions contains @email
-      )`
-    }
-
-    // Start with AllSources and filter out excluded app schemas
-    let newSources = this.getSchemaSources()
     if (excludedApps && excludedApps.length > 0) {
-      let sourcesToExclude: string[] = []
+      const sourcesToExclude: VespaSchema[] = []
 
       excludedApps.forEach((excludedApp) => {
         switch (excludedApp) {
@@ -519,89 +396,349 @@ export class VespaService {
             break
         }
       })
-      newSources = newSources
-        .split(", ")
-        .filter((source) => !sourcesToExclude.includes(source))
-        .join(", ")
+
+      sources = sources.filter((source) => !sourcesToExclude.includes(source))
     }
 
-    // Start with all apps and filter out excluded ones
+    return sources
+  }
+
+  private getIncludedApps(excludedApps?: Apps[]): Apps[] {
     const allApps = Object.values(Apps)
-    const includedApps = allApps.filter(
-      (appItem) => !excludedApps?.includes(appItem),
+    return allApps.filter((appItem) => !excludedApps?.includes(appItem))
+  }
+
+  private buildAppSpecificQueries(
+    includedApps: Apps[],
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    notInMailLabels?: string[],
+    intent?: Intent | null,
+  ) {
+    const appConditions = []
+
+    if (includedApps.length === 0) {
+      return [
+        this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
+      ]
+    }
+    // default condition to cover all other apps
+    appConditions.push(
+      this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
     )
 
-    // Build app-specific queries for included apps
-    const appQueries: string[] = []
+    if (includedApps.includes(Apps.GoogleWorkspace)) {
+      appConditions.push(
+        this.buildGoogleWorkspaceCondition(hits, app, entity, timestampRange),
+      )
+    }
+    if (includedApps.includes(Apps.Gmail)) {
+      appConditions.push(
+        this.buildGmailCondition(
+          hits,
+          app,
+          entity,
+          timestampRange,
+          notInMailLabels,
+          intent,
+        ),
+      )
+    }
+    if (includedApps.includes(Apps.Slack)) {
+      appConditions.push(
+        this.buildSlackCondition(hits, app, entity, timestampRange),
+      )
+    }
 
-    for (const includedApp of includedApps) {
-      switch (includedApp) {
-        case Apps.GoogleWorkspace:
-          appQueries.push(buildGoogleWorkspaceYQL())
-          break
-        case Apps.Gmail:
-          appQueries.push(buildGmailYQL())
-          break
-        case Apps.GoogleDrive:
-          appQueries.push(buildGoogleDriveYQL())
-          break
-        case Apps.GoogleCalendar:
-          appQueries.push(buildGoogleCalendarYQL())
-          break
-        case Apps.Slack:
-          appQueries.push(buildSlackYQL())
-          break
-        case Apps.DataSource:
-          break
-        default:
-          appQueries.push(buildDefaultYQL())
-          break
+    if (includedApps.includes(Apps.DataSource)) {
+    }
+
+    return appConditions
+  }
+
+  private buildDataSourceFileYQL = (
+    hits: number,
+    selectedItem: Record<string, unknown>,
+  ) => {
+    const dsIds = (selectedItem as Record<string, unknown>)[
+      Apps.DataSource
+    ] as any
+    const dataSourceIdConditions = dsIds.map((id: string) =>
+      contains("dataSourceId", id.trim()),
+    )
+    const searchCondition = Or.withoutPermissions([
+      userInput("@query", hits),
+      nearestNeighbor("chunk_embeddings", "e", hits),
+    ])
+
+    return And.withoutPermissions([searchCondition, dataSourceIdConditions])
+  }
+
+  private buildCollectionFileYQL = (
+    hits: number,
+    conditions: YqlCondition[],
+  ) => {
+    const searchCondition = Or.withoutPermissions([
+      userInput("@query", hits),
+      nearestNeighbor("chunk_embeddings", "e", hits),
+    ])
+
+    return And.withoutPermissions([
+      searchCondition,
+      Or.withoutPermissions(conditions),
+    ])
+  }
+
+  private buildGoogleWorkspaceCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+  ) {
+    const permissionBasedConditions = []
+
+    permissionBasedConditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      permissionBasedConditions.push(
+        timestamp("creationTime", "creationTime", timestampRange),
+      )
+    }
+
+    const hasAppOrEntity = !!(app || entity)
+    if (!hasAppOrEntity) {
+      permissionBasedConditions.push(contains("app", Apps.GoogleWorkspace))
+    }
+
+    const permissionBasedQuery = and(permissionBasedConditions)
+
+    const ownershipBasedConditions = []
+
+    ownershipBasedConditions.push(
+      Or.withOwnerPermissions([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      ownershipBasedConditions.push(
+        timestamp("creationTime", "creationTime", timestampRange),
+      )
+    }
+
+    if (Array.isArray(app) && app.length > 0) {
+      const appConditions = app.map((a) => contains("app", a))
+      ownershipBasedConditions.push(Or.withOwnerPermissions(appConditions))
+    } else if (app && !Array.isArray(app)) {
+      ownershipBasedConditions.push(contains("app", app))
+    }
+
+    if (Array.isArray(entity) && entity.length > 0) {
+      const entityConditions = entity.map((e) => contains("entity", e))
+      ownershipBasedConditions.push(Or.withOwnerPermissions(entityConditions))
+    } else if (entity && !Array.isArray(entity)) {
+      ownershipBasedConditions.push(contains("entity", entity))
+    }
+
+    const ownershipBasedQuery = and(ownershipBasedConditions)
+
+    return Or.withoutPermissions([permissionBasedQuery, ownershipBasedQuery])
+  }
+
+  private buildGmailCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    notInMailLabels?: string[],
+    intent?: Intent | null,
+  ) {
+    const conditions = []
+
+    conditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(timestamp("timestamp", "timestamp", timestampRange))
+    }
+
+    if (notInMailLabels && notInMailLabels.length > 0) {
+      const labelConditions = notInMailLabels
+        .filter((label) => label && label.trim())
+        .map((label) => contains("labels", label.trim()))
+
+      if (labelConditions.length > 0) {
+        const combinedLabels =
+          labelConditions.length === 1
+            ? labelConditions[0]!
+            : or(labelConditions)
+
+        conditions.push(combinedLabels.not())
       }
     }
 
-    // Combine all queries
-    const combinedQuery = appQueries.join("\nor\n")
-    const exclusionCondition = buildExclusionCondition()
+    if (intent) {
+      const intentCondition = this.buildIntentConditionFromIntent(intent)
+      if (intentCondition) {
+        conditions.push(intentCondition)
+      }
+    }
 
-    return {
-      profile: profile,
-      yql: `
-    select * from sources ${newSources}
-        where (
-          (
-            ${combinedQuery}
-          )
-          ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
-        )
-    `,
-    }
+    return and(conditions)
   }
-  // Helper function to build intent filter
-  buildIntentFilter = (intent: Intent | null) => {
-    const intentFilters: string[] = []
-    if (intent?.from && intent.from.length > 0) {
-      intentFilters.push(
-        intent.from.map((from) => `\"from\" contains '${from}'`).join(" or "),
+
+  private buildGoogleDriveAgentCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    driveIdsCondition?: YqlCondition,
+  ) {
+    const conditions = []
+
+    conditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    }
+
+    if (driveIdsCondition) {
+      conditions.push(driveIdsCondition)
+    }
+
+    return and(conditions)
+  }
+
+  private buildAgentGoogleCalendarCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    intent?: Intent | null,
+  ) {
+    const conditions = []
+
+    conditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(timestamp("startTime", "startTime", timestampRange))
+    }
+
+    return and(conditions)
+  }
+
+  private buildSlackCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    channelIdsCondition?: YqlCondition,
+  ) {
+    const conditions = []
+
+    conditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    }
+    if (channelIdsCondition) {
+      conditions.push(channelIdsCondition)
+    }
+
+    return and(conditions)
+  }
+
+  private buildDefaultCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    intent?: Intent | null,
+  ) {
+    const conditions = []
+
+    conditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(
+        or([
+          timestamp("updatedAt", "updatedAt", timestampRange),
+          timestamp("creationTime", "creationTime", timestampRange),
+          timestamp("startTime", "startTime", timestampRange),
+          timestamp("timestamp", "timestamp", timestampRange),
+        ]),
       )
     }
-    if (intent?.to && intent.to.length > 0) {
-      intentFilters.push(
-        intent.to.map((to) => `to contains '${to}'`).join(" or "),
+
+    return and(conditions)
+  }
+
+  private buildIntentConditionFromIntent(intent: Intent) {
+    const intentConditions = []
+
+    if (intent.from && intent.from.length > 0) {
+      const fromConditions = intent.from.map((from) =>
+        contains(`\"from\"`, from),
+      )
+      intentConditions.push(
+        fromConditions.length === 1 ? fromConditions[0]! : or(fromConditions),
       )
     }
-    if (intent?.cc && intent.cc.length > 0) {
-      intentFilters.push(
-        intent.cc.map((cc) => `cc contains '${cc}'`).join(" or "),
+
+    if (intent.to && intent.to.length > 0) {
+      const toConditions = intent.to.map((to) => contains("to", to))
+      intentConditions.push(
+        toConditions.length === 1 ? toConditions[0]! : or(toConditions),
       )
     }
-    if (intent?.bcc && intent.bcc.length > 0) {
-      intentFilters.push(
-        intent.bcc.map((bcc) => `bcc contains '${bcc}'`).join(" or "),
+
+    if (intent.cc && intent.cc.length > 0) {
+      const ccConditions = intent.cc.map((cc) => contains("cc", cc))
+      intentConditions.push(
+        ccConditions.length === 1 ? ccConditions[0]! : or(ccConditions),
       )
     }
-    return intentFilters.length > 0
-      ? "and" + " " + intentFilters.join(" and ")
-      : ""
+
+    if (intent.bcc && intent.bcc.length > 0) {
+      const bccConditions = intent.bcc.map((bcc) => contains("bcc", bcc))
+      intentConditions.push(
+        bccConditions.length === 1 ? bccConditions[0]! : or(bccConditions),
+      )
+    }
+
+    return intentConditions.length > 0 ? and(intentConditions) : null
   }
 
   HybridDefaultProfileForAgent = (
@@ -612,336 +749,180 @@ export class VespaService {
     timestampRange?: { to: number | null; from: number | null } | null,
     excludedIds?: string[],
     notInMailLabels?: string[],
-    AllowedApps: Apps[] | null = null,
+    allowedApps: Apps[] | null = null,
     dataSourceIds: string[] = [],
     intent: Intent | null = null,
     channelIds: string[] = [],
     processedCollectionSelections: CollectionVespaIds = {},
     driveIds: string[] = [],
-    selectedItem: {} = {},
+    selectedItem: Record<string, unknown> = {},
+    email?: string,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
-      }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
-      }
-      return conditions.join(" and ")
-    }
+    const appQueries: YqlCondition[] = []
+    const sources = new Set<VespaSchema>()
 
-    // helper function to build docId inclusion condition
     const buildDocsInclusionCondition = (fieldName: string, ids: string[]) => {
-      if (!ids || ids.length === 0) return ""
+      if (!ids || ids.length === 0) return
 
-      const conditions = ids.map((id) => `${fieldName} contains '${id.trim()}'`)
-      return conditions.join(" or ")
-    }
-
-    // Helper function to build app/entity filter
-    const buildAppEntityFilter = () => {
-      return `${
-        app
-          ? (Array.isArray(app) && app.length > 0)
-            ? `and (${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`
-            : "and app contains @app"
-          : ""
-      } ${
-        entity
-          ? Array.isArray(entity) && entity.length > 0
-            ? `and (${entity.map((e) => `entity contains '${escapeYqlValue(e)}'`).join(" or ")})`
-            : "and entity contains @entity"
-          : ""
-      }`.trim()
-    }
-    // Helper function to build exclusion condition
-    const buildExclusionCondition = () => {
-      if (!excludedIds || excludedIds.length === 0) return ""
-      return excludedIds.map((id) => `docId contains '${id}'`).join(" or ")
-    }
-    // Helper function to build mail label query
-    const buildMailLabelQuery = () => {
-      if (!notInMailLabels || notInMailLabels.length === 0) return ""
-      return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
-    }
-    // App-specific YQL builders
-    const buildGoogleWorkspaceYQL = () => {
-      const userTimestamp = buildTimestampConditions(
-        "creationTime",
-        "creationTime",
-      )
-      const appOrEntityFilter = buildAppEntityFilter()
-      const hasAppOrEntity = !!(app || entity)
-      const intentFilter = this.buildIntentFilter(intent)
-      return `
-      (
-        ({targetHits:${hits}} userInput(@query))
-        ${timestampRange ? `and (${userTimestamp})` : ""}
-        ${
-          !hasAppOrEntity
-            ? `and app contains "${Apps.GoogleWorkspace}"`
-            : `${appOrEntityFilter} and permissions contains @email`
-        }
-      )
-      or
-      (
-        ({targetHits:${hits}} userInput(@query))
-        and owner contains @email
-        ${timestampRange ? `and ${userTimestamp}` : ""}
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-    const buildGmailYQL = () => {
-      const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
-      const appOrEntityFilter = buildAppEntityFilter()
-      const mailLabelQuery = buildMailLabelQuery()
-      const intentFilter = this.buildIntentFilter(intent)
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${timestampRange ? `and (${mailTimestamp})` : ""}
-        and permissions contains @email
-        ${mailLabelQuery}
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-    const buildGoogleDriveYQL = () => {
-      const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      const appOrEntityFilter = buildAppEntityFilter()
-      // let driveItem:string [] = []
-      // if we have some DriveIds then we are going to fetch all the items in that folder
-      const intentFilter = this.buildIntentFilter(intent)
-      let driveItem: string[] = []
-      if ((selectedItem as any)[Apps.GoogleDrive]) {
-        driveItem = [...(selectedItem as any)[Apps.GoogleDrive]]
-      }
-
-      const driveIdConditions = buildDocsInclusionCondition("docId", driveIds)
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${timestampRange ? `and (${fileTimestamp})` : ""}
-        and permissions contains @email
-        ${appOrEntityFilter}
-        ${driveIdConditions ? `and ${driveIdConditions}` : ""}
-        ${intentFilter}
-      )
-     `
-    }
-    const buildGoogleCalendarYQL = () => {
-      const eventTimestamp = buildTimestampConditions("startTime", "startTime")
-      const appOrEntityFilter = buildAppEntityFilter()
-      const intentFilter = this.buildIntentFilter(intent)
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(chunk_embeddings, e))
-        )
-        ${timestampRange ? `and (${eventTimestamp})` : ""}
-        and permissions contains @email
-        ${appOrEntityFilter}
-        ${intentFilter}
-      )`
-    }
-    const buildSlackYQL = () => {
-      const appOrEntityFilter = buildAppEntityFilter()
-      let channelIds: string[] = []
-      const intentFilter = this.buildIntentFilter(intent)
-      channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
-      const channelIdConditions = buildDocsInclusionCondition(
-        "docId",
-        channelIds,
-      )
-
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        ${appOrEntityFilter}
-        and permissions contains @email
-        ${channelIdConditions ? `and ${channelIdConditions}` : ""}
-      )`
+      const conditions = ids.map((id) => contains(fieldName, id.trim()))
+      return Or.withoutPermissions(conditions)
     }
 
-    const buildDataSourceFileYQL = () => {
-      // For DataSourceFile, app and entity might not be directly applicable in the same way,
-      // but keeping appOrEntityFilter for consistency if needed for other metadata.
-
-      const dsIds = (selectedItem as Record<string, unknown>)[
-        Apps.DataSource
-      ] as any
-      const dataSourceIdConditions = buildDocsInclusionCondition(
-        "dataSourceId",
-        dsIds,
-      )
-
-      return `
-      (
-        (
-          ({targetHits:${hits}}userInput(@query))
-          or
-          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-        ) 
-        and ${dataSourceIdConditions}
-      )`
-    }
-
+    // knowledge base collections conditions will not have permissions checks
     const buildCollectionConditions = (
-      processedSelections: CollectionVespaIds,
-    ) => {
-      let conditions: string[] = []
+      selections: CollectionVespaIds,
+    ): YqlCondition[] => {
+      const conds: YqlCondition[] = []
+      const { collectionIds, collectionFolderIds, collectionFileIds } =
+        selections
 
-      if (
-        processedSelections.collectionIds &&
-        processedSelections.collectionIds.length > 0
-      ) {
-        const collectionCondition = `(${processedSelections.collectionIds.map((id: string) => `clId contains '${id.trim()}'`).join(" or ")})`
-        conditions.push(collectionCondition)
+      if (collectionIds?.length) {
+        conds.push(
+          Or.withoutPermissions(
+            collectionIds.map((id) => contains("clId", id.trim())),
+          ),
+        )
       }
-
-      if (
-        processedSelections.collectionFolderIds &&
-        processedSelections.collectionFolderIds.length > 0
-      ) {
-        const folderCondition = `(${processedSelections.collectionFolderIds.map((id: string) => `clFd contains '${id.trim()}'`).join(" or ")})`
-        conditions.push(folderCondition)
+      if (collectionFolderIds?.length) {
+        conds.push(
+          Or.withoutPermissions(
+            collectionFolderIds.map((id) => contains("clFd", id.trim())),
+          ),
+        )
       }
-
-      if (
-        processedSelections.collectionFileIds &&
-        processedSelections.collectionFileIds.length > 0
-      ) {
-        const fileCondition = `(${processedSelections.collectionFileIds.map((id: string) => `docId contains '${id.trim()}'`).join(" or ")})`
-        conditions.push(fileCondition)
+      if (collectionFileIds?.length) {
+        conds.push(
+          Or.withoutPermissions(
+            collectionFileIds.map((id) => contains("docId", id.trim())),
+          ),
+        )
       }
-      return conditions
+      return conds
     }
 
-    const buildCollectionFileYQL = (conditions: string[]) => {
-      const finalCondition = `(${conditions.join(" or ")})`
-      return `
-      (
-        (
-          ({targetHits:${hits}}userInput(@query))
-          or
-          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-        ) 
-        and ${finalCondition}
-      )`
-    }
+    // --- App handler dispatcher ---
+    const handleApp = (allowedApp: Apps) => {
+      switch (allowedApp) {
+        case Apps.GoogleWorkspace:
+          appQueries.push(
+            this.buildGoogleWorkspaceCondition(
+              hits,
+              app,
+              entity,
+              timestampRange,
+            ),
+          )
+          sources.add(userSchema)
+          break
 
-    // Build app-specific queries and sources
-    const appQueries: string[] = []
-    const sources: string[] = []
+        case Apps.Gmail:
+          appQueries.push(
+            this.buildGmailCondition(
+              hits,
+              app,
+              entity,
+              timestampRange,
+              notInMailLabels,
+              intent,
+            ),
+          )
+          sources.add(mailSchema)
+          break
 
-    if (AllowedApps && AllowedApps.length > 0) {
-      for (const allowedApp of AllowedApps) {
-        switch (allowedApp) {
-          case Apps.GoogleWorkspace:
-            appQueries.push(buildGoogleWorkspaceYQL())
-            if (!sources.includes(userSchema)) sources.push(userSchema)
-            break
-          case Apps.Gmail:
-            appQueries.push(buildGmailYQL())
-            if (!sources.includes(mailSchema)) sources.push(mailSchema)
-            break
-          case Apps.GoogleDrive:
-            const googleDriveYQL = buildGoogleDriveYQL()
-            appQueries.push(googleDriveYQL)
-            if (!sources.includes(fileSchema)) sources.push(fileSchema)
-            break
-          case Apps.GoogleCalendar:
-            appQueries.push(buildGoogleCalendarYQL())
-            if (!sources.includes(eventSchema)) sources.push(eventSchema)
-            break
-          case Apps.Slack:
-            appQueries.push(buildSlackYQL())
-            if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
-            if (!sources.includes(chatMessageSchema))
-              sources.push(chatMessageSchema)
-            if (!sources.includes(chatContainerSchema))
-              sources.push(chatContainerSchema)
-            break
-          case Apps.DataSource:
-            appQueries.push(buildDataSourceFileYQL())
-            if (!sources.includes(dataSourceFileSchema))
-              sources.push(dataSourceFileSchema)
-            break
-          case Apps.KnowledgeBase:
-            const collectionConditions = buildCollectionConditions(
-              processedCollectionSelections,
+        case Apps.GoogleDrive:
+          const driveIdsCond = buildDocsInclusionCondition("docId", driveIds)
+          appQueries.push(
+            this.buildGoogleDriveAgentCondition(
+              hits,
+              app,
+              entity,
+              timestampRange,
+              driveIdsCond,
+            ),
+          )
+          sources.add(fileSchema)
+          break
+
+        case Apps.GoogleCalendar:
+          appQueries.push(
+            this.buildAgentGoogleCalendarCondition(
+              hits,
+              app,
+              entity,
+              timestampRange,
+            ),
+          )
+          sources.add(eventSchema)
+          break
+
+        case Apps.Slack:
+          const slackChannelIds =
+            (selectedItem[Apps.Slack] as string[]) || channelIds
+          const channelCond = buildDocsInclusionCondition(
+            "docId",
+            slackChannelIds,
+          )
+          appQueries.push(
+            this.buildSlackCondition(
+              hits,
+              app,
+              entity,
+              timestampRange,
+              channelCond,
+            ),
+          )
+          sources
+            .add(chatUserSchema)
+            .add(chatMessageSchema)
+            .add(chatContainerSchema)
+          break
+
+        case Apps.DataSource:
+          appQueries.push(this.buildDataSourceFileYQL(hits, selectedItem))
+          sources.add(dataSourceFileSchema)
+          break
+
+        case Apps.KnowledgeBase:
+          const collectionConds = buildCollectionConditions(
+            processedCollectionSelections,
+          )
+          if (collectionConds.length > 0) {
+            appQueries.push(this.buildCollectionFileYQL(hits, collectionConds))
+            sources.add(KbItemsSchema)
+          } else {
+            this.logger.warn(
+              "KnowledgeBase specified but no valid selections found. Skipping.",
             )
-            if (collectionConditions.length > 0) {
-              const collectionQuery =
-                buildCollectionFileYQL(collectionConditions)
-              appQueries.push(collectionQuery)
-              if (!sources.includes(KbItemsSchema)) sources.push(KbItemsSchema)
-            } else {
-              this.logger.warn(
-                "Apps.KnowledgeBase specified for agent, but no valid processedCollectionSelections found. Skipping KnowledgeBase search part.",
-              )
-            }
-            break
-        }
+          }
+          break
       }
-    } else if (dataSourceIds && dataSourceIds.length > 0) {
-      // This handles the case where AllowedApps might be empty or null,
-      // but specific dataSourceIds are provided (e.g., agent is only for specific data sources).
-      appQueries.push(buildDataSourceFileYQL())
-      if (!sources.includes(dataSourceFileSchema))
-        sources.push(dataSourceFileSchema)
-    }
-    if (channelIds.length > 0) {
-      appQueries.push(buildSlackYQL())
-      if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
-      if (!sources.includes(chatMessageSchema)) sources.push(chatMessageSchema)
-      if (!sources.includes(chatContainerSchema))
-        sources.push(chatContainerSchema)
     }
 
-    // Combine all queries
-    const combinedQuery = appQueries.join("\n    or\n    ")
-    const exclusionCondition = buildExclusionCondition()
-    const sourcesString = [...new Set(sources)].join(", ") // Ensure unique sources
-
-    // If sourcesString is empty (e.g., only Apps.DataSource was specified but no dataSourceIds were provided,
-    // or no valid AllowedApps were given), then the YQL query will be invalid.
-    const fromClause = sourcesString ? `from sources ${sourcesString}` : ""
-
-    const finalYql = `
-    select *
-    ${fromClause} 
-    where
-    (
-      (
-        ${combinedQuery}
-      )
-      ${exclusionCondition ? `and !(${exclusionCondition})` : ""}
-    )
-    ;
-    `
-
-    return {
-      profile: profile,
-      yql: finalYql,
+    if (allowedApps?.length) {
+      allowedApps.forEach(handleApp)
+    } else if (dataSourceIds?.length) {
+      // fallback: only data sources
+      appQueries.push(this.buildDataSourceFileYQL(hits, selectedItem))
+      sources.add(dataSourceFileSchema)
     }
+
+    const yqlBuilder = YqlBuilder.create({
+      email,
+      sources: [...sources],
+      targetHits: hits,
+    })
+
+    yqlBuilder.from([...sources])
+    if (appQueries.length > 0) {
+      // Add queries without permission checks to support knowledge base collections
+      yqlBuilder.where(Or.withoutPermissions(appQueries))
+    }
+
+    if (app) yqlBuilder.filterByApp(app)
+    if (entity) yqlBuilder.filterByEntity(entity)
+    if (excludedIds?.length) yqlBuilder.excludeDocIds(excludedIds)
+
+    return yqlBuilder.buildProfile(profile)
   }
 
   HybridDefaultProfileInFiles = (
@@ -949,61 +930,54 @@ export class VespaService {
     profile: SearchModes = SearchModes.NativeRank,
     fileIds: string[],
     notInMailLabels?: string[],
+    email?: string,
   ): YqlProfile => {
-    let mailLabelQuery = ""
-    if (notInMailLabels && notInMailLabels.length > 0) {
-      mailLabelQuery = `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
+    const buildContextFilters = (ids: string[]): YqlCondition[] =>
+      ids.filter(Boolean).map((id) => contains("docId", id.trim()))
+
+    const buildDocOrMailSearch = (): YqlCondition => {
+      const baseSearch = or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ])
+
+      if (!notInMailLabels?.length) return baseSearch
+
+      const labelFilters = notInMailLabels
+        .filter((label) => label && label.trim())
+        .map((label) => contains("labels", label.trim()))
+
+      return and([baseSearch, or(labelFilters).not()])
     }
 
-    const contextClauses: string[] = []
+    const buildSlackSearch = (): YqlCondition =>
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ])
 
-    if (fileIds?.length) {
-      const idFilters = fileIds.map((id) => `docId contains '${id}'`)
-      contextClauses.push(...idFilters)
+    const buildContactSearch = (): YqlCondition => userInput("@query", hits)
+
+    // --- search conditions ---
+    const searchConditions: YqlCondition[] = [
+      buildDocOrMailSearch(),
+      buildSlackSearch(),
+      buildContactSearch(),
+    ]
+
+    const contextFilters = buildContextFilters(fileIds)
+    if (contextFilters.length > 0) {
+      searchConditions.push(and(contextFilters))
     }
 
-    const specificContextQuery = contextClauses.length
-      ? `and (${contextClauses.join(" or ")})`
-      : ""
-
-    // the last 2 'or' conditions are due to the 2 types of users, contacts and admin directory present in the same schema
-    return {
-      profile: profile,
-      yql: `
-        select * from sources ${AllSources}
-        where ((
-          (
-            (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-            )
-            and permissions contains @email ${mailLabelQuery}
-            ${specificContextQuery} 
-          )
-            or
-            (
-              (
-              ({targetHits:${hits}}userInput(@query))
-              or
-              ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-            )
-              and permissions contains @email ${specificContextQuery}
-            )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and permissions contains @email ${specificContextQuery}
-          )
-          or
-          (
-            ({targetHits:${hits}}userInput(@query))
-            and owner contains @email
-            ${specificContextQuery}
-          )
-        )
-      )`,
-    }
+    return YqlBuilder.create({
+      email,
+      sources: AllSources,
+      targetHits: hits,
+    })
+      .from(AllSources)
+      .whereOr(...searchConditions)
+      .buildProfile(profile)
   }
 
   HybridDefaultProfileForSlack = (
@@ -1013,60 +987,37 @@ export class VespaService {
     threadId?: string,
     userId?: string,
     timestampRange?: { to: number | null; from: number | null } | null,
+    email?: string,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
-      }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
-      }
-      return conditions.join(" and ")
-    }
-
-    const timestampCondition = buildTimestampConditions(
-      "createdAt",
-      "createdAt",
-    )
-
-    const channelIdConditions =
-      channelIds && channelIds.length > 0
-        ? `(${channelIds.map((id) => `channelId contains '${id}'`).join(" or ")})`
-        : ""
-
-    const threadIdCondition = threadId ? `threadId contains '${threadId}'` : ""
-    const userIdCondition = userId ? `userId contains '${userId}'` : ""
-
-    const conditions = [
-      timestampCondition,
-      channelIdConditions,
-      threadIdCondition,
-      userIdCondition,
+    let conditions: YqlCondition[] = [
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("e", "text_embeddings", hits),
+      ]),
     ]
-      .filter(Boolean)
-      .join(" and ")
 
-    const yql = `
-    select * from sources ${chatMessageSchema}
-    where (
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        and permissions contains @email
-        ${conditions ? `and ${conditions}` : ""}
-      )
-    )
-  `
-
-    return {
-      profile: profile,
-      yql: yql,
+    if (timestampRange && !timestampRange.from && !timestampRange.to) {
+      conditions.push(timestamp("createdAt", "createdAt", timestampRange))
     }
+
+    if (channelIds && channelIds.length > 0) {
+      conditions.push(or(channelIds.map((id) => contains("channelId", id))))
+    }
+    if (threadId) {
+      conditions.push(contains("threadId", threadId))
+    }
+    if (userId) {
+      conditions.push(contains("userId", userId))
+    }
+
+    return YqlBuilder.create({
+      email,
+      sources: [chatMessageSchema],
+      targetHits: hits,
+    })
+      .from([chatMessageSchema])
+      .where(and(conditions))
+      .buildProfile(profile)
   }
 
   HybridDefaultProfileAppEntityCounts = (
@@ -1074,193 +1025,129 @@ export class VespaService {
     timestampRange: { to: number; from: number } | null,
     notInMailLabels?: string[],
     excludedApps?: Apps[],
+    email?: string,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
-      }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
-      }
-      return conditions.join(" and ")
-    }
+    let conditions: YqlCondition[] = [
+      this.buildDefaultCondition(hits, null, null),
+    ]
 
-    // Helper function to build mail label query
-    const buildMailLabelQuery = () => {
-      if (!notInMailLabels || notInMailLabels.length === 0) return ""
-      return `and !(${notInMailLabels.map((label) => `labels contains '${label}'`).join(" or ")})`
-    }
-
-    // Validate timestamp range
-    if (timestampRange && !timestampRange.from && !timestampRange.to) {
-      throw new Error("Invalid timestamp range")
-    }
-
-    // App-specific YQL builders for counting
-    const buildFilesAndMailYQL = () => {
-      const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
-      const mailLabelQuery = buildMailLabelQuery()
-
-      return `
-      (
-        (
-          ({targetHits:${hits}}userInput(@query))
-          or
-          ({targetHits:${hits}}nearestNeighbor(chunk_embeddings, e))
-        )
-        ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-        and permissions contains @email
-        ${mailLabelQuery}
-      )`
-    }
-
-    const buildTextEmbeddingsYQL = () => {
-      const fileTimestamp = buildTimestampConditions("updatedAt", "updatedAt")
-      const mailTimestamp = buildTimestampConditions("timestamp", "timestamp")
-
-      return `
-      (
-        (
-          ({targetHits:${hits}}userInput(@query))
-          or
-          ({targetHits:${hits}}nearestNeighbor(text_embeddings, e))
-        )
-        ${timestampRange ? `and (${fileTimestamp} or ${mailTimestamp})` : ""}
-        and permissions contains @email
-      )`
-    }
-
-    const buildGoogleWorkspaceYQL = () => {
-      const userTimestamp = buildTimestampConditions(
-        "creationTime",
-        "creationTime",
+    if (notInMailLabels && notInMailLabels.length > 0) {
+      conditions.push(
+        this.buildGmailCondition(
+          hits,
+          null,
+          null,
+          timestampRange,
+          notInMailLabels,
+        ),
       )
-
-      return `
-      (
-        ({targetHits:${hits}}userInput(@query))
-        ${timestampRange ? `and ${userTimestamp}` : ""}
-        and app contains "${Apps.GoogleWorkspace}"
-      )`
     }
 
-    const buildOwnerYQL = () => {
-      const userTimestamp = buildTimestampConditions(
-        "creationTime",
-        "creationTime",
-      )
+    const slackConditions: YqlCondition[] = [
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ]),
+    ]
 
-      return `
-      (
-        ({targetHits:${hits}}userInput(@query))
-        and owner contains @email
-        ${timestampRange ? `and ${userTimestamp}` : ""}
-      )`
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      slackConditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
+
+    conditions.push(and(slackConditions))
+
+    conditions.push(
+      this.buildGoogleWorkspaceCondition(hits, null, null, timestampRange),
+    )
 
     // Start with AllSources and filter out excluded app schemas
     let newSources = this.getSchemaSources()
-    if (excludedApps && excludedApps.length > 0) {
-      let sourcesToExclude: string[] = []
+    if (excludedApps?.length) {
+      const sourcesToExclude = excludedApps.reduce<string[]>(
+        (acc, excludedApp) => {
+          switch (excludedApp) {
+            case Apps.Slack:
+              return acc.concat([chatMessageSchema, chatUserSchema])
+            case Apps.Gmail:
+              return acc.concat([mailSchema, mailAttachmentSchema])
+            case Apps.GoogleDrive:
+              return acc.concat([fileSchema])
+            case Apps.GoogleCalendar:
+              return acc.concat([eventSchema])
+            case Apps.GoogleWorkspace:
+              return acc.concat([userSchema])
+            default:
+              return acc
+          }
+        },
+        [],
+      )
 
-      excludedApps.forEach((excludedApp) => {
-        switch (excludedApp) {
-          case Apps.Slack:
-            sourcesToExclude.push(chatMessageSchema, chatUserSchema)
-            break
-          case Apps.Gmail:
-            sourcesToExclude.push(mailSchema, mailAttachmentSchema)
-            break
-          case Apps.GoogleDrive:
-            sourcesToExclude.push(fileSchema)
-            break
-          case Apps.GoogleCalendar:
-            sourcesToExclude.push(eventSchema)
-            break
-          case Apps.GoogleWorkspace:
-            sourcesToExclude.push(userSchema)
-            break
-        }
-      })
-
-      // Filter out excluded schemas from AllSources
-      newSources = this.getSchemaSources()
-        .split(", ")
-        .filter((source) => !sourcesToExclude.includes(source))
-        .join(", ")
+      newSources = this.getSchemaSources().filter(
+        (source) => !sourcesToExclude.includes(source),
+      )
     }
 
-    // Build the combined query using modular components
-    const filesAndMailQuery = buildFilesAndMailYQL()
-    const textEmbeddingsQuery = buildTextEmbeddingsYQL()
-    const googleWorkspaceQuery = buildGoogleWorkspaceYQL()
-    const ownerQuery = buildOwnerYQL()
-
-    return {
-      profile: SearchModes.NativeRank,
-      yql: `select * from sources ${newSources}
-            where (
-              ${filesAndMailQuery}
-              or
-              ${textEmbeddingsQuery}
-              or
-              ${googleWorkspaceQuery}
-              or
-              ${ownerQuery}
+    return YqlBuilder.create({
+      email,
+      sources: newSources,
+      targetHits: hits,
+    })
+      .from(newSources)
+      .where(or(conditions))
+      .limit(0)
+      .groupBy(`
+        all(
+              group(app) each(
+                  group(entity) each(output(count()))
+              )
             )
-            limit 0
-            | all(
-                group(app) each(
-                    group(entity) each(output(count()))
-                )
-            )`,
-    }
+        `)
+      .buildProfile(SearchModes.NativeRank)
   }
 
   getAllDocumentsForAgent = async (
     AllowedApps: Apps[] | null,
     dataSourceIds: string[] = [],
     limit: number = 400,
+    email: string,
   ): Promise<VespaSearchResponse | null> => {
-    const sources: string[] = []
-    const conditions: string[] = []
+    const sources: VespaSchema[] = []
+    const conditions: YqlCondition[] = []
 
     if (AllowedApps && AllowedApps.length > 0) {
       for (const allowedApp of AllowedApps) {
         switch (allowedApp) {
           case Apps.GoogleWorkspace:
             if (!sources.includes(userSchema)) sources.push(userSchema)
-            conditions.push(`app contains "${Apps.GoogleWorkspace}"`)
+            conditions.push(contains("app", Apps.GoogleWorkspace))
             break
           case Apps.Gmail:
             if (!sources.includes(mailSchema)) sources.push(mailSchema)
-            conditions.push(`app contains "${Apps.Gmail}"`)
+            conditions.push(contains("app", Apps.Gmail))
             break
           case Apps.GoogleDrive:
             if (!sources.includes(fileSchema)) sources.push(fileSchema)
-            conditions.push(`app contains "${Apps.GoogleDrive}"`)
+            conditions.push(contains("app", Apps.GoogleDrive))
             break
           case Apps.GoogleCalendar:
             if (!sources.includes(eventSchema)) sources.push(eventSchema)
-            conditions.push(`app contains "${Apps.GoogleCalendar}"`)
+            conditions.push(contains("app", Apps.GoogleCalendar))
             break
           case Apps.Slack:
             if (!sources.includes(chatUserSchema)) sources.push(chatUserSchema)
             if (!sources.includes(chatMessageSchema))
               sources.push(chatMessageSchema)
-            conditions.push(`app contains "${Apps.Slack}"`)
+            conditions.push(contains("app", Apps.Slack))
             break
           case Apps.DataSource:
             if (dataSourceIds && dataSourceIds.length > 0) {
               if (!sources.includes(dataSourceFileSchema))
                 sources.push(dataSourceFileSchema)
-              const dsConditions = dataSourceIds
-                .map((id) => `dataSourceId contains '${id.trim()}'`)
-                .join(" or ")
-              conditions.push(`(${dsConditions})`)
+              const dsConditions = dataSourceIds.map((id) =>
+                contains("dataSourceId", id.trim()),
+              )
+              conditions.push(Or.withoutPermissions(dsConditions))
             }
             break
         }
@@ -1268,19 +1155,21 @@ export class VespaService {
     } else if (dataSourceIds && dataSourceIds.length > 0) {
       if (!sources.includes(dataSourceFileSchema))
         sources.push(dataSourceFileSchema)
-      const dsConditions = dataSourceIds
-        .map((id) => `dataSourceId contains '${id.trim()}'`)
-        .join(" or ")
-      conditions.push(`(${dsConditions})`)
-    }
-    //return null
-    const sourcesString = [...new Set(sources)].join(", ")
-    if (!sourcesString) {
-      return null
+      const dsConditions = dataSourceIds.map((id) =>
+        contains("dataSourceId", id.trim()),
+      )
+      conditions.push(Or.withoutPermissions(dsConditions))
     }
 
-    const whereClause = `where ${conditions.join(" or ")}`
-    const yql = `select * from sources ${sourcesString} ${whereClause}`
+    const schemaSources = [...new Set(sources)]
+    const yql = YqlBuilder.create({
+      email,
+      sources: schemaSources,
+      targetHits: limit,
+    })
+      .from(schemaSources)
+      .where(or(conditions))
+      .build()
 
     const payload = {
       yql,
@@ -1292,7 +1181,7 @@ export class VespaService {
     return this.vespa.search<VespaSearchResponse>(payload).catch((error) => {
       throw new ErrorPerformingSearch({
         cause: error as Error,
-        sources: sourcesString,
+        sources: schemaSources.join(", "),
       })
     })
   }
@@ -1356,8 +1245,9 @@ export class VespaService {
       timestampRange ?? null,
       [], // notInMailLabels
       excludedApps, // excludedApps as fourth parameter
+      email,
     )
-
+    console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1368,9 +1258,10 @@ export class VespaService {
     try {
       return await this.vespa.groupSearch(hybridDefaultPayload)
     } catch (error) {
+      console.log("Error in group vespa search: ", error)
       throw new ErrorPerformingSearch({
         cause: error as Error,
-        sources: this.getSchemaSources(),
+        sources: this.getSchemaSourcesString(),
       })
     }
   }
@@ -1485,8 +1376,9 @@ export class VespaService {
       notInMailLabels,
       excludedApps,
       intent,
+      email,
     )
-
+    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1517,7 +1409,7 @@ export class VespaService {
       this.logger.error(`Search failed with error:`, error)
       throw new ErrorPerformingSearch({
         cause: error as Error,
-        sources: this.getSchemaSources(),
+        sources: this.getSchemaSourcesString(),
       })
     }
   }
@@ -1544,8 +1436,10 @@ export class VespaService {
       rankProfile,
       fileIds,
       notInMailLabels,
+      email,
     )
 
+    // console.log("Vespa YQL Query: in files ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1569,7 +1463,7 @@ export class VespaService {
       .catch((error) => {
         throw new ErrorPerformingSearch({
           cause: error as Error,
-          sources: this.getSchemaSources(),
+          sources: this.getSchemaSourcesString(),
         })
       })
   }
@@ -1604,6 +1498,7 @@ export class VespaService {
       threadId,
       userId,
       timestampRange,
+      email,
     )
 
     const hybridDefaultPayload = {
@@ -1628,30 +1523,6 @@ export class VespaService {
           sources: chatMessageSchema,
         })
       })
-  }
-
-  searchVespaThroughAgent = async (
-    query: string,
-    email: string,
-    apps: Apps[] | null,
-    {
-      alpha = 0.5,
-      limit = this.config.page,
-      offset = 0,
-      rankProfile = SearchModes.NativeRank,
-      requestDebug = false,
-      span = null,
-      maxHits = 400,
-    }: Partial<VespaQueryConfig>,
-  ): Promise<VespaSearchResponse> => {
-    if (!query?.trim()) {
-      throw new Error("Query cannot be empty")
-    }
-
-    if (!email?.trim()) {
-      throw new Error("Email cannot be empty")
-    }
-    return {} as VespaSearchResponse
   }
 
   searchVespaAgent = async (
@@ -1699,8 +1570,10 @@ export class VespaService {
       processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
       selectedItem,
+      email,
     )
 
+    console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1762,10 +1635,20 @@ export class VespaService {
       docIds,
       generateAnswerSpan,
     }
-    return this.vespa.getDocumentsByOnlyDocIds(opts).catch((error) => {
-      this.logger.error(error, `Error fetching document docIds: ${docIds}`)
-      throw new Error(getErrorMessage(error))
-    })
+    const yqlIds = docIds.map((id) => contains("docId", id))
+    const yqlMailIds = docIds.map((id) => contains("mailId", id))
+
+    const yqlQuery = YqlBuilder.create()
+      .from("*")
+      .whereOr(...yqlIds, ...yqlMailIds)
+      .build()
+
+    return this.vespa
+      .getDocumentsByOnlyDocIds({ ...opts, yql: yqlQuery })
+      .catch((error) => {
+        this.logger.error(error, `Error fetching document docIds: ${docIds}`)
+        throw new Error(getErrorMessage(error))
+      })
   }
 
   /**
@@ -1782,24 +1665,6 @@ export class VespaService {
         this.logger.error(
           error,
           `Error fetching random document for schema ${schema}`,
-        )
-        throw new Error(getErrorMessage(error))
-      })
-  }
-
-  GetDocumentWithField = async (
-    fieldName: string,
-    schema: VespaSchema,
-    limit: number = 100,
-    offset: number = 0,
-  ): Promise<VespaSearchResponse> => {
-    const opts = { namespace: this.config.namespace, schema }
-    return this.vespa
-      .getDocumentsWithField(fieldName, opts, limit, offset)
-      .catch((error) => {
-        this.logger.error(
-          error,
-          `Error fetching documents with field: ${fieldName}`,
         )
         throw new Error(getErrorMessage(error))
       })
@@ -1909,7 +1774,7 @@ export class VespaService {
   }
 
   ifDocumentsExistInSchema = async (
-    schema: string,
+    schema: VespaSchema,
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> => {
     return this.vespa
@@ -1921,46 +1786,6 @@ export class VespaService {
         )
         throw new Error(getErrorMessage(error))
       })
-  }
-
-  getNDocuments = async (n: number) => {
-    // Encode the YQL query to ensure it's URL-safe
-    const yql = encodeURIComponent(
-      `select * from sources ${fileSchema} where true`,
-    )
-
-    // Construct the search URL with necessary query parameters
-    const url = `${this.vespaEndpoint}/search/?yql=${yql}&hits=${n}&cluster=${this.config.cluster}`
-
-    try {
-      const response: Response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-        },
-      })
-
-      if (!response.ok) {
-        const errorText = response.statusText
-        throw new Error(
-          `Failed to fetch document count: ${response.status} ${response.statusText} - ${errorText}`,
-        )
-      }
-
-      const data = await response.json()
-
-      return data
-    } catch (error) {
-      const errMessage = getErrorMessage(error)
-      this.logger.error(
-        `Error retrieving document count: , ${errMessage}`,
-        error,
-      )
-      throw new ErrorRetrievingDocuments({
-        cause: error as Error,
-        sources: "file",
-      })
-    }
   }
 
   hashQuery = (query: string) => {
@@ -2020,14 +1845,14 @@ export class VespaService {
     // Construct YQL conditions for names and emails
     const nameConditions = mentionedNames.map((name) => {
       // For fuzzy search
-      return `(name_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy("${name}")))`
+      return fuzzy("name", name)
       // For exact match, use:
       // return `(name contains "${name}")`;
     })
 
     const emailConditions = mentionedEmails.map((email) => {
       // For fuzzy search
-      return `(email_fuzzy contains ({maxEditDistance: 2, prefix: true} fuzzy("${email}")))`
+      return fuzzy("email", email)
       // For exact match, use:
       // return `(email contains "${email}")`;
     })
@@ -2144,50 +1969,14 @@ export class VespaService {
     } = params
 
     const schemas = Array.isArray(schema) ? schema : [schema]
-    const schemasString = schemas.join(", ")
     // Construct conditions based on parameters
-    let conditions: string[] = []
-
-    // App condition
-    if (Array.isArray(app) && app.length > 0) {
-      conditions.push(
-        `(${app.map((a) => `app contains '${escapeYqlValue(a)}'`).join(" or ")})`,
-      )
-    } else if (!Array.isArray(app) && app) {
-      conditions.push(`app contains '${escapeYqlValue(app)}'`)
-    }
+    let conditions: YqlCondition[] = []
 
     if (app === Apps.Slack && channelIds && channelIds.length > 0) {
-      const channelIdConditions = channelIds
-        .map((id) => `channelId contains '${escapeYqlValue(id)}'`)
-        .join(" or ")
-      conditions.push(`(${channelIdConditions})`)
-    }
-
-    // Entity condition
-    if (Array.isArray(entity) && entity.length > 0) {
-      conditions.push(
-        `(${entity
-          .map((e) => `entity contains '${escapeYqlValue(e)}'`)
-          .join(" or ")})`,
+      const channelIdConditions = channelIds.map((id) =>
+        contains("channelId", id.trim()),
       )
-    } else if (!Array.isArray(entity) && entity) {
-      conditions.push(`entity contains '${escapeYqlValue(entity)}'`)
-    }
-
-    // Permissions or owner condition based on schema
-    if (schemas.length === 1 && schemas[0] === dataSourceFileSchema) {
-      // Temporal fix for datasoure selection
-    } else if (!schemas.includes(userSchema)) {
-      conditions.push(`permissions contains '${email}'`)
-    } else {
-      // For user schema
-      if (
-        app !== Apps.GoogleWorkspace ||
-        (Array.isArray(app) && !app.includes(Apps.GoogleWorkspace))
-      ) {
-        conditions.push(`owner contains '${email}'`)
-      }
+      conditions.push(or(channelIdConditions))
     }
 
     let timestampField = []
@@ -2213,30 +2002,38 @@ export class VespaService {
 
     // Timestamp conditions
     if (timestampRange) {
-      let timeConditions: string[] = []
-      let fieldForRange = timestampField // Use default field unless orderBy overrides
+      const timeConditions: YqlCondition[] = []
+      const fieldForRange = timestampField // Use default field unless orderBy overrides
 
       if (timestampRange.from) {
-        timeConditions.push(
-          `${fieldForRange.map((field) => `${field} >= ${new Date(timestampRange.from!).getTime()}`).join(" or ")}`,
-        )
+        const fromTimestamp = new Date(timestampRange.from).getTime()
+        if (fieldForRange.length > 1) {
+          const fromConditions = fieldForRange.map((field) =>
+            greaterThanOrEqual(field, fromTimestamp),
+          )
+          timeConditions.push(or(fromConditions))
+        } else {
+          timeConditions.push(
+            greaterThanOrEqual(fieldForRange[0]!, fromTimestamp),
+          )
+        }
       }
-      if (timestampRange.to) {
-        timeConditions.push(
-          `${fieldForRange.map((field) => `${field} <= ${new Date(timestampRange.to!).getTime()}`).join(" or ")}`,
-        )
-      }
-      if (timeConditions.length > 0) {
-        conditions.push(`(${timeConditions.join(" and ")})`)
-      }
-    }
 
-    // Excluded IDs condition
-    if (excludedIds && excludedIds.length > 0) {
-      const exclusionCondition = excludedIds
-        .map((id) => `docId contains '${id}'`)
-        .join(" or ")
-      conditions.push(`!(${exclusionCondition})`)
+      if (timestampRange.to) {
+        const toTimestamp = new Date(timestampRange.to).getTime()
+        if (fieldForRange.length > 1) {
+          const toConditions = fieldForRange.map((field) =>
+            lessThanOrEqual(field, toTimestamp),
+          )
+          timeConditions.push(or(toConditions))
+        } else {
+          timeConditions.push(lessThanOrEqual(fieldForRange[0]!, toTimestamp))
+        }
+      }
+
+      if (timeConditions.length > 0) {
+        conditions.push(and(timeConditions))
+      }
     }
 
     // Intent-based conditions - modular approach for different apps
@@ -2267,34 +2064,29 @@ export class VespaService {
           )
         }
       }
-
-      // Future: Handle Slack intent filtering
-      // else if (app === Apps.Slack && entity === SlackEntity.Message && schema === chatMessageSchema) {
-      //   const slackIntentConditions = processSlackIntent(intent)
-      //   if (slackIntentConditions.length > 0) {
-      //     conditions.push(...slackIntentConditions)
-      //     this.logger.debug(`Added Slack intent conditions: ${slackIntentConditions.join(" and ")}`)
-      //   }
-      // }
-
-      // Future: Handle other apps...
     }
 
-    // Combine conditions
-    const whereClause =
-      conditions.length > 0 ? `where ${conditions.join(" and ")}` : "where true"
+    const yqlBuilder = YqlBuilder.create({ email })
+      .from(schema)
+      .whereOr(...conditions)
+      .offset(offset ?? 0)
 
-    const orderByClause = timestampField
-      ? `order by ${timestampField} ${asc ? "asc" : "desc"}`
-      : ""
-
-    // Construct YQL query with proper clause ordering and spacing
-    let yql = `select * from sources ${schema} ${whereClause}`
-
-    if (orderByClause) {
-      yql += ` ${orderByClause}`
+    if (app) {
+      yqlBuilder.filterByApp(app)
+    }
+    if (entity) {
+      yqlBuilder.filterByEntity(entity)
+    }
+    if (timestampField.length > 0 && timestampField[0]) {
+      yqlBuilder.orderBy(timestampField[0], asc ? "asc" : "desc")
     }
 
+    if (excludedIds && excludedIds.length > 0) {
+      yqlBuilder.excludeDocIds(excludedIds)
+    }
+
+    const yql = yqlBuilder.build()
+    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] YQL Query: ${yql}`)
     this.logger.info(`[getItems] Query Details:`, {
       schema,
@@ -2308,6 +2100,8 @@ export class VespaService {
 
     const searchPayload = {
       yql,
+      hits: limit,
+      ...(offset ? { offset } : {}),
       "ranking.profile": "unranked",
       timeout: "30s",
     }
@@ -2354,8 +2148,17 @@ export class VespaService {
     name: string,
     createdByEmail: string,
   ): Promise<VespaDataSourceSearch | null> => {
-    const yql = `select * from ${datasourceSchema} where name contains @name and createdBy contains @email limit 1`
+    const yql = YqlBuilder.create()
+      .from(datasourceSchema)
+      .where(
+        and([contains("name", name), contains("createdBy", createdByEmail)]),
+      )
+      .limit(1)
+      .build()
 
+    this.logger.info(
+      `Fetching DataSource by name "${name}" and creator "${createdByEmail}"`,
+    )
     const payload = {
       yql,
       name,
@@ -2396,7 +2199,12 @@ export class VespaService {
     createdByEmail: string,
     limit: number = 100,
   ): Promise<VespaSearchResponse> => {
-    const yql = `select * from ${datasourceSchema} where createdBy contains @email limit ${limit}`
+    const yql = YqlBuilder.create()
+      .from(datasourceSchema)
+      .where(contains("createdBy", createdByEmail))
+      .limit(limit)
+      .build()
+
     const payload = {
       yql,
       email: createdByEmail,
@@ -2424,12 +2232,17 @@ export class VespaService {
     dataSourceId: string,
     uploadedBy: string,
   ): Promise<boolean> => {
-    const yql = `
-    select * 
-    from sources ${dataSourceFileSchema} 
-    where fileName contains @fileName and dataSourceId contains @dataSourceId and uploadedBy contains @uploadedBy 
-    limit 1
-  `
+    const yql = YqlBuilder.create()
+      .from(dataSourceFileSchema)
+      .where(
+        and([
+          contains("fileName", fileName),
+          contains("dataSourceId", dataSourceId),
+          contains("uploadedBy", uploadedBy),
+        ]),
+      )
+      .limit(1)
+      .build()
 
     const payload = {
       yql,
@@ -2466,12 +2279,19 @@ export class VespaService {
     concurrency = 3,
     batchSize = 400,
   ): Promise<VespaSearchResult[] | null> => {
+    const yql = YqlBuilder.create()
+      .from(dataSourceFileSchema)
+      .where(
+        and([
+          contains("dataSourceName", dataSourceName),
+          contains("uploadedBy", userEmail),
+        ]),
+      )
+      .limit(0)
+      .build()
+
     const countPayload = {
-      yql: `
-      select * 
-      from sources ${dataSourceFileSchema} 
-      where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
-    `,
+      yql,
       dataSourceName,
       userEmail,
       hits: 0,
@@ -2501,13 +2321,19 @@ export class VespaService {
 
     const batchPayloads = []
     for (let offset = 0; offset < totalCount; offset += batchSize) {
+      const yql = YqlBuilder.create()
+        .from(dataSourceFileSchema)
+        .where(
+          and([
+            contains("dataSourceName", dataSourceName),
+            contains("uploadedBy", userEmail),
+          ]),
+        )
+        .orderBy("createdAt", "desc")
+        .build()
+
       const payload = {
-        yql: `
-        select * 
-        from sources ${dataSourceFileSchema} 
-        where dataSourceName contains @dataSourceName and uploadedBy contains @userEmail 
-        order by createdAt desc
-      `,
+        yql,
         dataSourceName,
         userEmail,
         hits: Math.min(batchSize, totalCount - offset),
@@ -2555,75 +2381,31 @@ export class VespaService {
     timestampRange?: { to: number | null; from: number | null } | null,
     channelId?: string,
     userId?: string,
+    email?: string,
   ): YqlProfile => {
-    // Helper function to build timestamp conditions
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const conditions: string[] = []
-      if (timestampRange?.from) {
-        conditions.push(`${fromField} >= ${timestampRange.from}`)
-      }
-      if (timestampRange?.to) {
-        conditions.push(`${toField} <= ${timestampRange.to}`)
-      }
-      return conditions.join(" and ")
-    }
-
-    // Helper function to build entity filter
-    const buildEntityFilter = () => {
-      return entity ? "and entity contains @entity" : ""
-    }
-
-    // Helper function to build channel filter
-    const buildChannelFilter = () => {
-      return channelId ? "and channelId contains @channelId" : ""
-    }
-
-    // Helper function to build user filter
-    const buildUserFilter = () => {
-      return userId ? "and userId contains @userId" : ""
-    }
-
-    // Build Slack YQL
-    const buildSlackYQL = () => {
-      const timestampCondition = timestampRange
-        ? buildTimestampConditions("createdAt", "createdAt")
-        : ""
-      const entityFilter = buildEntityFilter()
-      const channelFilter = buildChannelFilter()
-      const userFilter = buildUserFilter()
-
-      return `
-      (
-        (
-          ({targetHits:${hits}} userInput(@query))
-          or
-          ({targetHits:${hits}} nearestNeighbor(text_embeddings, e))
-        )
-        ${timestampCondition ? `and (${timestampCondition})` : ""}
-        and permissions contains @email
-        ${entityFilter}
-        ${channelFilter}
-        ${userFilter}
-      )`
-    }
-
-    const combinedQuery = buildSlackYQL()
-    const sources = [chatMessageSchema] // Only chat message schema for Slack
-
-    return {
-      profile: profile,
-      yql: `
-    select *
-    from sources ${sources.join(", ")} 
-    where
-    (
-      (
-        ${combinedQuery}
+    const conditions: YqlCondition[] = [
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ]),
+    ]
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(
+        timestamp("createdAt", "createdAt", {
+          from: timestampRange.from,
+          to: timestampRange.to,
+        }),
       )
-    )
-    ;
-    `,
     }
+
+    if (entity) conditions.push(contains("entity", entity))
+    if (channelId) conditions.push(contains("channelId", channelId))
+    if (userId) conditions.push(contains("userId", userId))
+
+    return YqlBuilder.create({ email })
+      .from(chatMessageSchema)
+      .where(and(conditions))
+      .buildProfile(profile)
   }
 
   SearchVespaThreads = async (
@@ -2746,6 +2528,7 @@ export class VespaService {
         timestampRange,
         channelId,
         userId,
+        email,
       )
 
       const hybridPayload = {
@@ -2777,40 +2560,30 @@ export class VespaService {
     }
 
     // Plain YQL search
-    const conditions: string[] = []
+    const conditions: YqlCondition[] = []
 
-    if (entity) conditions.push(`entity contains "${entity}"`)
-    if (userEmail) conditions.push(`permissions contains "${userEmail}"`)
-    if (channelId) conditions.push(`channelId contains "${channelId}"`)
-    if (userId) conditions.push(`userId contains "${userId}"`)
+    if (channelId) conditions.push(contains("channelId", channelId))
+    if (userId) conditions.push(contains("userId", userId))
 
     const timestampField = "createdAt"
-
-    const buildTimestampConditions = (fromField: string, toField: string) => {
-      const timestampConditions: string[] = []
-      if (timestampRange?.from) {
-        timestampConditions.push(`${fromField} >= '${timestampRange.from}'`)
-      }
-      if (timestampRange?.to) {
-        timestampConditions.push(`${toField} <= '${timestampRange.to}'`)
-      }
-      return timestampConditions
-    }
-
     if (timestampRange) {
-      const timestampConditions = buildTimestampConditions(
+      const timestampConditions = timestamp(
         timestampField,
         timestampField,
+        timestampRange,
       )
-      conditions.push(...timestampConditions)
+      conditions.push(timestampConditions)
     }
 
-    const whereClause = conditions.length
-      ? `where ${conditions.join(" and ")}`
-      : ""
-    const orderClause = `order by createdAt ${asc ? "asc" : "desc"}`
-    const yql = `select * from sources ${chatMessageSchema} ${whereClause} ${orderClause} limit ${limit} offset ${offset}`
+    const yqlBuilder = YqlBuilder.create({ email })
+      .from(chatMessageSchema)
+      .where(and(conditions))
+      .orderBy(timestampField, asc ? "asc" : "desc")
+    if (limit) yqlBuilder.limit(limit)
+    if (offset) yqlBuilder.offset(offset)
+    if (entity) yqlBuilder.filterByEntity(entity)
 
+    const yql = yqlBuilder.build()
     const payload = {
       yql,
       "ranking.profile": "unranked",
@@ -2845,7 +2618,7 @@ export class VespaService {
 
   getFolderItems = async (
     docIds: string[],
-    schema: string,
+    schema: VespaSchema,
     entity: string,
     email: string,
   ) => {
@@ -2896,36 +2669,34 @@ export class VespaService {
       })
     }
 
-    // Build optional docId filtering conditions
-    let docIdFilter = ""
-    if (docIds && docIds.length > 0) {
-      const docIdConditions = docIds
-        .map((id) => `docId contains '${escapeYqlValue(id.trim())}'`)
-        .join(" or ")
-      docIdFilter = `and (${docIdConditions})`
-    }
-    let parentDocIdFilter = ""
-    if (parentDocIds && parentDocIds.length > 0) {
-      const parentDocIdConditions = parentDocIds
-        .map((id) => `clFd contains '${escapeYqlValue(id.trim())}'`)
-        .join(" or ")
-      parentDocIdFilter = `and (${parentDocIdConditions})`
-    }
-
     // Construct RAG YQL query - hybrid search with both text and vector search
     // This combines BM25 text search with vector similarity search
-    const yqlQuery = `select * from sources ${KbItemsSchema} where (
-      (
-        ({targetHits:${limit}} userInput(@query))
-        or
-        ({targetHits:${limit}} nearestNeighbor(chunk_embeddings, e))
+    const conditions: YqlCondition[] = [
+      or([
+        userInput("@query", limit),
+        nearestNeighbor("e", "chunk_embeddings", limit),
+      ]),
+    ]
+
+    if (docIds && docIds.length > 0) {
+      const docIdConditions = docIds.map((id) => contains("docId", id.trim()))
+      conditions.push(or(docIdConditions))
+    }
+
+    if (parentDocIds && parentDocIds.length > 0) {
+      const parentDocIdConditions = parentDocIds.map((id) =>
+        contains("clFd", id.trim()),
       )
-      ${docIdFilter}
-      ${parentDocIdFilter}
-    )`
+      conditions.push(or(parentDocIdConditions))
+    }
+
+    const yql = YqlBuilder.create()
+      .from(KbItemsSchema)
+      .where(and(conditions))
+      .build()
 
     const searchPayload = {
-      yql: yqlQuery,
+      yql: yql,
       query: query.trim(),
       "ranking.profile": rankProfile,
       "input.query(e)": "embed(@query)",

@@ -65,7 +65,7 @@ export enum Apps {
   MicrosoftDrive = "microsoft-drive",
   MicrosoftOutlook = "microsoft-outlook",
   MicrosoftCalendar = "microsoft-calendar",
-  MicrosoftSharepoint = "microsoft-sharepoint"
+  MicrosoftSharepoint = "microsoft-sharepoint",
 }
 
 export enum WebSearchEntity {
@@ -1605,7 +1605,7 @@ export interface ITextChunker {
 export interface VespaDependencies {
   logger: ILogger
   config: VespaConfig
-  sourceSchemas: string[]
+  sourceSchemas: VespaSchema[]
   vespaEndpoint: string
   textChunker?: ITextChunker
 }
