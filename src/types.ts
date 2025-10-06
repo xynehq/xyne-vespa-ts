@@ -196,7 +196,7 @@ const NotionEntitySchema = z.nativeEnum(NotionEntity)
 export type MicrosoftPeopleEntityType = z.infer<
   typeof MicrosoftPeopleEntitySchema
 >
-console.log("FROM VESPA TS")
+
 export const entitySchema = z.union([
   SystemEntitySchema,
   PeopleEntitySchema,
