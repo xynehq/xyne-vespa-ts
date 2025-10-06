@@ -763,7 +763,7 @@ export class VespaService {
       const intentFilter = this.buildIntentFilter(intent)
       channelIds = (selectedItem as Record<string, unknown>)[Apps.Slack] as any
       const channelIdConditions = buildDocsInclusionCondition(
-        "docId",
+        "channelId",
         channelIds,
       )
 
