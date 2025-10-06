@@ -1,6 +1,6 @@
 {
   "name": "@xyne/vespa-ts",
-  "version": "1.0.7",
+  "version": "1.0.12",
   "publishConfig": {
     "access": "public"
   },

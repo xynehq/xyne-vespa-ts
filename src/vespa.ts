@@ -2534,7 +2534,7 @@ export class VespaService {
       const hybridPayload = {
         yql,
         query: filterQuery,
-        email: userEmail,
+        email: email,
         "ranking.profile": profile,
         "input.query(e)": "embed(@query)",
         "input.query(alpha)": 0.5,
