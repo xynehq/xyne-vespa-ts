@@ -350,7 +350,7 @@ export class VespaService {
       yqlBuilder.from(availableSources)
       if (appQueries.length > 0) {
         const combinedCondition = or(appQueries)
-        if(!app && !entity){
+        if (!app && !entity) {
           combinedCondition.and(this.getExcludeAttachmentCondition())
         }
         yqlBuilder.where(combinedCondition)
@@ -919,8 +919,13 @@ export class VespaService {
     yqlBuilder.from([...sources])
     if (appQueries.length > 0) {
       // Add queries without permission checks to support knowledge base collections
-      if(!app && !entity){
-        yqlBuilder.where(And.withoutPermissions([Or.withoutPermissions(appQueries), this.getExcludeAttachmentCondition()]))
+      if (!app && !entity) {
+        yqlBuilder.where(
+          And.withoutPermissions([
+            Or.withoutPermissions(appQueries),
+            this.getExcludeAttachmentCondition(),
+          ]),
+        )
       } else {
         yqlBuilder.where(Or.withoutPermissions(appQueries))
       }
@@ -1114,35 +1119,47 @@ export class VespaService {
       .buildProfile(SearchModes.NativeRank)
   }
 
-  private filterAttachmentApp = (app: Apps | Apps[] | null | undefined): Apps | Apps[] | null => {
+  private filterAttachmentApp = (
+    app: Apps | Apps[] | null | undefined,
+  ): Apps | Apps[] | null => {
     if (!app) {
       return null
     }
-    
+
     if (Array.isArray(app)) {
-      const filteredApps = app.filter(a => a !== Apps.Attachment)
+      const filteredApps = app.filter((a) => a !== Apps.Attachment)
       return filteredApps.length === 0 ? null : filteredApps
     }
 
     return app === Apps.Attachment ? null : app
   }
 
-  private filterAttachmentEntity = (entity: Entity | Entity[] | null | undefined): Entity | Entity[] | null => {
+  private filterAttachmentEntity = (
+    entity: Entity | Entity[] | null | undefined,
+  ): Entity | Entity[] | null => {
     if (!entity) {
       return null
     }
 
     if (Array.isArray(entity)) {
-      const filteredEntities = entity.filter(e => !Object.values(AttachmentEntity).includes(e as AttachmentEntity))
+      const filteredEntities = entity.filter(
+        (e) => !Object.values(AttachmentEntity).includes(e as AttachmentEntity),
+      )
       return filteredEntities.length === 0 ? null : filteredEntities
     }
 
-    return Object.values(AttachmentEntity).includes(entity as AttachmentEntity) ? null : entity
+    return Object.values(AttachmentEntity).includes(entity as AttachmentEntity)
+      ? null
+      : entity
   }
 
   private getExcludeAttachmentCondition = (): YqlCondition => {
     const appCondition = contains("app", Apps.Attachment)
-    const entityCondition = or(Object.values(AttachmentEntity).map((entity) => contains("entity", entity)))
+    const entityCondition = or(
+      Object.values(AttachmentEntity).map((entity) =>
+        contains("entity", entity),
+      ),
+    )
     return not(appCondition.or(entityCondition))
   }
 
@@ -2118,11 +2135,12 @@ export class VespaService {
       }
     }
 
-    const yqlBuilder = YqlBuilder.create({ email })
-      .from(schema)
-    
-    if(!app && !entity){
-      yqlBuilder.where(or(conditions).and(this.getExcludeAttachmentCondition())).offset(offset ?? 0)
+    const yqlBuilder = YqlBuilder.create({ email }).from(schema)
+
+    if (!app && !entity) {
+      yqlBuilder
+        .where(or(conditions).and(this.getExcludeAttachmentCondition()))
+        .offset(offset ?? 0)
     } else {
       yqlBuilder.whereOr(...conditions).offset(offset ?? 0)
     }
