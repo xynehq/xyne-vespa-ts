@@ -1107,7 +1107,7 @@ export class VespaService {
       targetHits: hits,
     })
       .from(newSources)
-      .where(or(conditions).and(this.getExcludeAttachmentCondition()))
+      .where(and([or(conditions), this.getExcludeAttachmentCondition()]))
       .limit(0)
       .groupBy(`
         all(
@@ -1225,7 +1225,7 @@ export class VespaService {
       targetHits: limit,
     })
       .from(schemaSources)
-      .where(or(conditions).and(this.getExcludeAttachmentCondition()))
+      .where(and([or(conditions), this.getExcludeAttachmentCondition()]))
       .build()
 
     const payload = {
@@ -2139,7 +2139,7 @@ export class VespaService {
 
     if (!app && !entity) {
       yqlBuilder
-        .where(or(conditions).and(this.getExcludeAttachmentCondition()))
+        .where(and([or(conditions), this.getExcludeAttachmentCondition()]))
         .offset(offset ?? 0)
     } else {
       yqlBuilder.whereOr(...conditions).offset(offset ?? 0)
