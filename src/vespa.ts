@@ -1155,12 +1155,7 @@ export class VespaService {
 
   private getExcludeAttachmentCondition = (): YqlCondition => {
     const appCondition = contains("app", Apps.Attachment)
-    const entityCondition = or(
-      Object.values(AttachmentEntity).map((entity) =>
-        contains("entity", entity),
-      ),
-    )
-    return not(appCondition.or(entityCondition))
+    return not(appCondition)
   }
 
   getAllDocumentsForAgent = async (
