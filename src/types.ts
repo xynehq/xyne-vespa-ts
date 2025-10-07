@@ -81,13 +81,13 @@ export enum KnowledgeBaseEntity {
 }
 
 export enum AttachmentEntity {
-  AttPDF = "att_pdf",
-  AttSheets = "att_sheets",
-  AttDocs = "att_docs",
-  AttImage = "att_image",
-  AttText = "att_text",
-  AttPPT = "att_ppt",
-  AttFile = "att_file",
+  PDF = "att_pdf",
+  Sheets = "att_sheets",
+  Docs = "att_docs",
+  Image = "att_image",
+  Text = "att_text",
+  PPT = "att_ppt",
+  File = "att_file",
 }
 
 export enum GooglePeopleEntity {

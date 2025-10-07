@@ -1116,10 +1116,7 @@ export class VespaService {
   }
 
   private filterAttachmentApp = (app: Apps | Apps[] | null | undefined): Apps | Apps[] | null => {
-    if (app === null) {
-      return app
-    }
-    if (app === undefined) {
+    if (!app) {
       return null
     }
     
@@ -1132,10 +1129,7 @@ export class VespaService {
   }
 
   private filterAttachmentEntity = (entity: Entity | Entity[] | null | undefined): Entity | Entity[] | null => {
-    if (entity === null) {
-      return entity
-    }
-    if (entity === undefined) {
+    if (!entity) {
       return null
     }
 
