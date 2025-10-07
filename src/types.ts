@@ -66,6 +66,7 @@ export enum Apps {
   MicrosoftOutlook = "microsoft-outlook",
   MicrosoftCalendar = "microsoft-calendar",
   MicrosoftSharepoint = "microsoft-sharepoint",
+  Attachment = "attachment",
 }
 
 export enum WebSearchEntity {
@@ -77,7 +78,16 @@ export enum KnowledgeBaseEntity {
   Folder = "folder", // Folders within collections
   Collection = "collection", // Collections (main containers)
   KnowledgeBase = "knowledgebase", // Legacy alias for collection
-  Attachment = "attachment",
+}
+
+export enum AttachmentEntity {
+  AttPDF = "att_pdf",
+  AttSheets = "att_sheets",
+  AttDocs = "att_docs",
+  AttImage = "att_image",
+  AttText = "att_text",
+  AttPPT = "att_ppt",
+  AttFile = "att_file",
 }
 
 export enum GooglePeopleEntity {
@@ -183,7 +193,10 @@ export enum DataSourceEntity {
 
 export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
 
-export const FileEntitySchema = z.nativeEnum(DriveEntity)
+export const FileEntitySchema = z.union([
+  z.nativeEnum(DriveEntity),
+  z.nativeEnum(AttachmentEntity),
+])
 export const MailEntitySchema = z.nativeEnum(MailEntity)
 export const MailAttachmentEntitySchema = z.nativeEnum(MailAttachmentEntity)
 export const EventEntitySchema = z.nativeEnum(CalendarEntity)
@@ -225,6 +238,7 @@ export type Entity =
   | KnowledgeBaseEntity
   | WebSearchEntity
   | MicrosoftPeopleEntityType
+  | AttachmentEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -265,6 +279,9 @@ export const VespaFileSchema = z.object({
   url: z.string().nullable(),
   parentId: z.string().nullable(),
   chunks: z.array(z.string()),
+  image_chunks: z.array(z.string()).optional(),
+  chunks_pos: z.array(z.number()).optional(),
+  image_chunks_pos: z.array(z.number()).optional(),
   owner: z.string().nullable(),
   ownerEmail: z.string().nullable(),
   photoLink: z.string().nullable().optional(),
@@ -413,6 +430,11 @@ export const VespaFileSearchSchema = VespaFileSchema.extend({
   .merge(defaultVespaFieldsSchema)
   .extend({
     chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+    image_chunks_summary: z
+      .array(z.union([z.string(), scoredChunk]))
+      .optional(),
+    chunks_pos_summary: z.array(z.number()).optional(),
+    image_chunks_pos_summary: z.array(z.number()).optional(),
   })
 
 // basically GetDocument doesn't return sddocname

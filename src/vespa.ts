@@ -20,6 +20,7 @@ import {
   chatContainerSchema,
   KbItemsSchema,
   type CollectionVespaIds,
+  AttachmentEntity,
 } from "./types"
 import type {
   VespaAutocompleteResponse,
@@ -60,6 +61,7 @@ import {
   lessThanOrEqual,
   andWithoutPermissions,
   fuzzy,
+  not,
 } from "./yql"
 import {
   ErrorDeletingDocuments,
@@ -302,7 +304,6 @@ export class VespaService {
         sources: "file",
       })
       // TODO: instead of null just send empty response
-      throw error
     })
   }
 
@@ -349,7 +350,11 @@ export class VespaService {
       yqlBuilder.from(availableSources)
       if (appQueries.length > 0) {
         const combinedCondition = or(appQueries)
-        yqlBuilder.where(combinedCondition)
+        if(!app && !entity){
+          yqlBuilder.where(combinedCondition.and(this.getExcludeAttachmentCondition()))
+        } else {
+          yqlBuilder.where(combinedCondition)
+        }
       }
 
       if (app !== null && app !== undefined) {
@@ -915,7 +920,11 @@ export class VespaService {
     yqlBuilder.from([...sources])
     if (appQueries.length > 0) {
       // Add queries without permission checks to support knowledge base collections
-      yqlBuilder.where(Or.withoutPermissions(appQueries))
+      if(!app && !entity){
+        yqlBuilder.where(And.withoutPermissions([Or.withoutPermissions(appQueries), this.getExcludeAttachmentCondition()]))
+      } else {
+        yqlBuilder.where(Or.withoutPermissions(appQueries))
+      }
     }
 
     if (app) yqlBuilder.filterByApp(app)
@@ -967,7 +976,7 @@ export class VespaService {
 
     const contextFilters = buildContextFilters(fileIds)
     if (contextFilters.length > 0) {
-      searchConditions.push(and(contextFilters))
+      searchConditions.push(or(contextFilters))
     }
 
     return YqlBuilder.create({
@@ -976,7 +985,7 @@ export class VespaService {
       targetHits: hits,
     })
       .from(AllSources)
-      .whereOr(...searchConditions)
+      .where(and(searchConditions))
       .buildProfile(profile)
   }
 
@@ -1094,7 +1103,7 @@ export class VespaService {
       targetHits: hits,
     })
       .from(newSources)
-      .where(or(conditions))
+      .where(or(conditions).and(this.getExcludeAttachmentCondition()))
       .limit(0)
       .groupBy(`
         all(
@@ -1104,6 +1113,44 @@ export class VespaService {
             )
         `)
       .buildProfile(SearchModes.NativeRank)
+  }
+
+  private filterAttachmentApp = (app: Apps | Apps[] | null | undefined): Apps | Apps[] | null => {
+    if (app === null) {
+      return app
+    }
+    if (app === undefined) {
+      return null
+    }
+    
+    if (Array.isArray(app)) {
+      const filteredApps = app.filter(a => a !== Apps.Attachment)
+      return filteredApps.length === 0 ? null : filteredApps
+    }
+
+    return app === Apps.Attachment ? null : app
+  }
+
+  private filterAttachmentEntity = (entity: Entity | Entity[] | null | undefined): Entity | Entity[] | null => {
+    if (entity === null) {
+      return entity
+    }
+    if (entity === undefined) {
+      return null
+    }
+
+    if (Array.isArray(entity)) {
+      const filteredEntities = entity.filter(e => !Object.values(AttachmentEntity).includes(e as AttachmentEntity))
+      return filteredEntities.length === 0 ? null : filteredEntities
+    }
+
+    return Object.values(AttachmentEntity).includes(entity as AttachmentEntity) ? null : entity
+  }
+
+  private getExcludeAttachmentCondition = (): YqlCondition => {
+    const appCondition = contains("app", Apps.Attachment)
+    const entityCondition = or(Object.values(AttachmentEntity).map((entity) => contains("entity", entity)))
+    return not(appCondition.or(entityCondition))
   }
 
   getAllDocumentsForAgent = async (
@@ -1168,7 +1215,7 @@ export class VespaService {
       targetHits: limit,
     })
       .from(schemaSources)
-      .where(or(conditions))
+      .where(or(conditions).and(this.getExcludeAttachmentCondition()))
       .build()
 
     const payload = {
@@ -1258,7 +1305,7 @@ export class VespaService {
     try {
       return await this.vespa.groupSearch(hybridDefaultPayload)
     } catch (error) {
-      console.log("Error in group vespa search: ", error)
+      this.logger.error("Error in group vespa search: ", error)
       throw new ErrorPerformingSearch({
         cause: error as Error,
         sources: this.getSchemaSourcesString(),
@@ -1291,8 +1338,12 @@ export class VespaService {
       isGmailConnected,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
+    // Filter out attachment app and entities if present
+    const filteredApp = this.filterAttachmentApp(app)
+    const filteredEntity = this.filterAttachmentEntity(entity)
+
     // either no prod config, or prod call errored
-    return await this._searchVespa(query, email, app, entity, {
+    return await this._searchVespa(query, email, filteredApp, filteredEntity, {
       alpha,
       limit,
       offset,
@@ -1378,7 +1429,7 @@ export class VespaService {
       intent,
       email,
     )
-    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1555,6 +1606,11 @@ export class VespaService {
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
 
+    // Filter out attachment app and entities if present
+    app = this.filterAttachmentApp(app)
+    entity = this.filterAttachmentEntity(entity)
+    Apps = this.filterAttachmentApp(Apps) as Apps[] | null
+
     let { yql, profile } = this.HybridDefaultProfileForAgent(
       limit,
       app,
@@ -1573,7 +1629,7 @@ export class VespaService {
       email,
     )
 
-    console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1956,8 +2012,6 @@ export class VespaService {
   getItems = async (params: GetItemsParams): Promise<VespaSearchResponse> => {
     const {
       schema,
-      app,
-      entity,
       timestampRange,
       limit = this.config.page,
       offset = 0,
@@ -1967,6 +2021,8 @@ export class VespaService {
       intent,
       channelIds,
     } = params
+
+    let { app, entity } = params
 
     const schemas = Array.isArray(schema) ? schema : [schema]
     // Construct conditions based on parameters
@@ -1991,6 +2047,9 @@ export class VespaService {
       schemas.includes(fileSchema) ||
       schemas.includes(chatMessageSchema)
     ) {
+      // Filter out attachment app and entities if present
+      app = this.filterAttachmentApp(app)
+      entity = this.filterAttachmentEntity(entity)
       timestampField.push("updatedAt")
     } else if (schemas.includes(eventSchema)) {
       timestampField.push("startTime")
@@ -2068,8 +2127,12 @@ export class VespaService {
 
     const yqlBuilder = YqlBuilder.create({ email })
       .from(schema)
-      .whereOr(...conditions)
-      .offset(offset ?? 0)
+    
+    if(!app && !entity){
+      yqlBuilder.where(or(conditions).and(this.getExcludeAttachmentCondition())).offset(offset ?? 0)
+    } else {
+      yqlBuilder.whereOr(...conditions).offset(offset ?? 0)
+    }
 
     if (app) {
       yqlBuilder.filterByApp(app)
@@ -2086,7 +2149,7 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.build()
-    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] YQL Query: ${yql}`)
     this.logger.info(`[getItems] Query Details:`, {
       schema,
