@@ -301,6 +301,7 @@ export const FileMatchFeaturesSchema = z.object({
   "bm25(chunks)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
   chunk_scores: chunkScoresSchema,
+  image_chunk_scores: chunkScoresSchema.optional(),
 })
 
 // Match features for user schema
@@ -350,6 +351,7 @@ const DataSourceFileMatchFeaturesSchema = z.object({
   "bm25(chunks)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
   chunk_scores: chunkScoresSchema.optional(),
+  image_chunk_scores: chunkScoresSchema.optional(),
 })
 export type DataSourceFileMatchFeatures = z.infer<
   typeof DataSourceFileMatchFeaturesSchema
@@ -649,6 +651,7 @@ const KbFileMatchFeaturesSchema = z.object({
   "bm25(chunks)": z.number().optional(),
   "closeness(field, chunk_embeddings)": z.number().optional(),
   chunk_scores: chunkScoresSchema.optional(),
+  image_chunk_scores: chunkScoresSchema.optional(),
 })
 export type KbFileMatchFeatures = z.infer<typeof KbFileMatchFeaturesSchema>
 
@@ -833,6 +836,7 @@ const SearchMatchFeaturesSchema = z.union([
   ChatMessageMatchFeaturesSchema,
   DataSourceFileMatchFeaturesSchema,
   ChatContainerMatchFeaturesSchema,
+  KbFileMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
