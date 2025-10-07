@@ -255,7 +255,7 @@ export class YqlBuilder {
     const apps = Array.isArray(app) ? app : [app]
 
     if (apps.length === 1) {
-      return this.where(contains("app", apps[0]!))
+      return this.where(this.createAnd([contains("app", apps[0]!)]))
     } else if (apps.length > 1) {
       const conditions = apps.map((a) => contains("app", a))
       return this.where(this.createOr(conditions).parenthesize())
@@ -271,7 +271,7 @@ export class YqlBuilder {
     const entities = Array.isArray(entity) ? entity : [entity]
 
     if (entities.length === 1) {
-      return this.where(contains("entity", entities[0]!))
+      return this.where(this.createAnd([contains("entity", entities[0]!)]))
     } else if (entities.length > 1) {
       const conditions = entities.map((e) => contains("entity", e))
       return this.where(this.createOr(conditions).parenthesize())
