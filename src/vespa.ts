@@ -351,10 +351,9 @@ export class VespaService {
       if (appQueries.length > 0) {
         const combinedCondition = or(appQueries)
         if(!app && !entity){
-          yqlBuilder.where(combinedCondition.and(this.getExcludeAttachmentCondition()))
-        } else {
-          yqlBuilder.where(combinedCondition)
+          combinedCondition.and(this.getExcludeAttachmentCondition())
         }
+        yqlBuilder.where(combinedCondition)
       }
 
       if (app !== null && app !== undefined) {
