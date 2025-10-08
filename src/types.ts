@@ -697,25 +697,25 @@ export const VespaChatMessageGetSchema = VespaChatMessageSchema.merge(
 )
 
 export const VespaChatAttachmentSchema = z.object({
-  docId: z.string(), // Slack file ID
-  messageId: z.string(), // Reference to chat message
+  docId: z.string(), 
+  messageId: z.string(), // Reference to chat message Id
   title: z.string(),
   filename: z.string(),
   mimeType: z.string(),
   fileType: z.string(),
   size: z.number(), // file size in bytes
-  url: z.string().optional(), // public URL (if available)
-  urlPrivate: z.string(), // private URL for downloading
-  urlPrivateDownload: z.string(), // direct download URL
-  thumbnailUrl: z.string().optional(), // thumbnail URL (if available)
-  createdAt: z.number(), // timestamp
-  teamId: z.string(), // Slack team ID
-  userId: z.string(), // user who uploaded the file
+  url: z.string().optional(),
+  urlPrivate: z.string(), 
+  urlPrivateDownload: z.string(), 
+  thumbnailUrl: z.string().optional(),
+  createdAt: z.number(),
+  teamId: z.string(), 
+  userId: z.string(),
   chatRef: z.string(), // Reference to chat container (vespa reference)
   dimensions: z.array(z.number()).length(2).optional(), // [width, height] for images
-  duration: z.number().optional(), // duration for audio/video files
-  metadata: z.string().default("{}"), // JSON string for additional metadata
-  chunks: z.array(z.string()).default([]), // text chunks for searchable content
+  duration: z.number().optional(), 
+  metadata: z.string().default("{}"), 
+  chunks: z.array(z.string()).default([]), 
 })
 
 export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend({
