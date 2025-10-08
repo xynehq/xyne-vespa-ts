@@ -17,7 +17,7 @@ export const chatContainerSchema = "chat_container"
 export const chatTeamSchema = "chat_team"
 export const chatMessageSchema = "chat_message"
 export const chatUserSchema = "chat_user"
-export const chatAttachment = "chat_attachment"
+export const chatAttachmentSchema = "chat_attachment"
 // previous queries
 export const userQuerySchema = "user_query"
 export const datasourceSchema = "datasource"
@@ -35,7 +35,7 @@ export type VespaSchema =
   | typeof chatTeamSchema
   | typeof chatMessageSchema
   | typeof chatUserSchema
-  | typeof chatAttachment
+  | typeof chatAttachmentSchema
   | typeof datasourceSchema
   | typeof dataSourceFileSchema
   | typeof KbItemsSchema
@@ -103,6 +103,7 @@ const Schemas = z.union([
   z.literal(chatTeamSchema),
   z.literal(chatUserSchema),
   z.literal(chatMessageSchema),
+  z.literal(chatAttachmentSchema),
   z.literal(datasourceSchema),
   z.literal(KbItemsSchema),
   z.literal(dataSourceFileSchema),
@@ -695,6 +696,42 @@ export const VespaChatMessageGetSchema = VespaChatMessageSchema.merge(
   defaultVespaFieldsSchema,
 )
 
+export const VespaChatAttachmentSchema = z.object({
+  docId: z.string(), // Slack file ID
+  messageId: z.string(), // Reference to chat message
+  title: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  fileType: z.string(),
+  size: z.number(), // file size in bytes
+  url: z.string().optional(), // public URL (if available)
+  urlPrivate: z.string(), // private URL for downloading
+  urlPrivateDownload: z.string(), // direct download URL
+  thumbnailUrl: z.string().optional(), // thumbnail URL (if available)
+  createdAt: z.number(), // timestamp
+  teamId: z.string(), // Slack team ID
+  userId: z.string(), // user who uploaded the file
+  chatRef: z.string(), // Reference to chat container (vespa reference)
+  dimensions: z.array(z.number()).length(2).optional(), // [width, height] for images
+  duration: z.number().optional(), // duration for audio/video files
+  metadata: z.string().default("{}"), // JSON string for additional metadata
+  chunks: z.array(z.string()).default([]), // text chunks for searchable content
+})
+
+export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend({
+  sddocname: z.literal(chatAttachmentSchema),
+  matchfeatures: z.any().optional(),
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
+  })
+
+export const VespaChatAttachmentGetSchema = VespaChatAttachmentSchema.merge(
+  defaultVespaFieldsSchema,
+)
+
 export const VespaChatUserSchema = z.object({
   docId: z.string(),
   name: z.string(),
@@ -789,6 +826,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaChatContainerSearchSchema,
   VespaChatUserSearchSchema,
   VespaChatMessageSearchSchema,
+  VespaChatAttachmentSearchSchema,
   VespaDataSourceSearchSchema,
   VespaDataSourceFileSearchSchema,
   VespaKbFileSearchSchema,
@@ -942,6 +980,7 @@ export type Inserts =
   | VespaChatTeam
   | VespaChatUser
   | VespaChatMessage
+  | VespaChatAttachment
   | VespaDataSource
   | VespaDataSourceFile
   | VespaKbFile
@@ -1110,7 +1149,10 @@ export type VespaChatContainerSearch = z.infer<
 >
 export type VespaChatUser = z.infer<typeof VespaChatUserSchema>
 export type VespaChatMessage = z.infer<typeof VespaChatMessageSchema>
+export type VespaChatAttachment = z.infer<typeof VespaChatAttachmentSchema>
 export type VespaChatUserSearch = z.infer<typeof VespaChatUserSearchSchema>
+export type VespaChatAttachmentSearch = z.infer<typeof VespaChatAttachmentSearchSchema>
+export type VespaChatAttachmentGet = z.infer<typeof VespaChatAttachmentGetSchema>
 export type VespaAutocompleteChatContainer = z.infer<
   typeof VespaAutocompleteChatContainerSchema
 >
