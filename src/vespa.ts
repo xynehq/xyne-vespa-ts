@@ -1299,7 +1299,7 @@ export class VespaService {
       excludedApps, // excludedApps as fourth parameter
       email,
     )
-    console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
