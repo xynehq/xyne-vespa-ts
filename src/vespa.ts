@@ -863,7 +863,7 @@ export class VespaService {
           const slackChannelIds =
             (selectedItem[Apps.Slack] as string[]) || channelIds
           const channelCond = buildDocsInclusionCondition(
-            "docId",
+            "channelId",
             slackChannelIds,
           )
           appQueries.push(
