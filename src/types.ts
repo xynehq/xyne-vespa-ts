@@ -18,6 +18,7 @@ export const chatTeamSchema = "chat_team"
 export const chatMessageSchema = "chat_message"
 export const chatUserSchema = "chat_user"
 export const chatAttachmentSchema = "chat_attachment"
+export const chatAttachment = "chat_attachment"
 // previous queries
 export const userQuerySchema = "user_query"
 export const datasourceSchema = "datasource"
@@ -34,6 +35,7 @@ export type VespaSchema =
   | typeof chatContainerSchema
   | typeof chatTeamSchema
   | typeof chatMessageSchema
+  | typeof chatAttachment
   | typeof chatUserSchema
   | typeof chatAttachmentSchema
   | typeof datasourceSchema
