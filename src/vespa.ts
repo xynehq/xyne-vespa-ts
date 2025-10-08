@@ -14,7 +14,6 @@ import {
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
-  type Intent,
   type Span,
   SlackEntity,
   chatContainerSchema,
@@ -38,6 +37,7 @@ import type {
   VespaQueryConfig,
   GetItemsParams,
   GetThreadItemsParams,
+  MailParticipant,
 } from "./types"
 import { SearchModes } from "./types"
 import {
@@ -324,7 +324,7 @@ export class VespaService {
     excludedIds?: string[],
     notInMailLabels?: string[],
     excludedApps?: Apps[],
-    intent?: Intent | null,
+    mailParticipants?: MailParticipant | null,
     userEmail?: string,
   ): YqlProfile => {
     try {
@@ -338,7 +338,7 @@ export class VespaService {
         entity,
         timestampRange,
         notInMailLabels,
-        intent,
+        mailParticipants,
       )
 
       const yqlBuilder = YqlBuilder.create({
@@ -419,18 +419,16 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     notInMailLabels?: string[],
-    intent?: Intent | null,
+    mailParticipants?: MailParticipant | null,
   ) {
     const appConditions = []
 
     if (includedApps.length === 0) {
-      return [
-        this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
-      ]
+      return [this.buildDefaultCondition(hits, app, entity, timestampRange)]
     }
     // default condition to cover all other apps
     appConditions.push(
-      this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
+      this.buildDefaultCondition(hits, app, entity, timestampRange),
     )
 
     if (includedApps.includes(Apps.GoogleWorkspace)) {
@@ -446,7 +444,7 @@ export class VespaService {
           entity,
           timestampRange,
           notInMailLabels,
-          intent,
+          mailParticipants,
         ),
       )
     }
@@ -563,7 +561,7 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     notInMailLabels?: string[],
-    intent?: Intent | null,
+    mailParticipants?: MailParticipant | null,
   ) {
     const conditions = []
 
@@ -593,10 +591,11 @@ export class VespaService {
       }
     }
 
-    if (intent) {
-      const intentCondition = this.buildIntentConditionFromIntent(intent)
-      if (intentCondition) {
-        conditions.push(intentCondition)
+    if (mailParticipants) {
+      const mailParticipantsCondition =
+        this.buildConditionFromMailParticipants(mailParticipants)
+      if (mailParticipantsCondition) {
+        conditions.push(mailParticipantsCondition)
       }
     }
 
@@ -635,7 +634,6 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null,
   ) {
     const conditions = []
 
@@ -684,7 +682,6 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null,
   ) {
     const conditions = []
 
@@ -709,40 +706,46 @@ export class VespaService {
     return and(conditions)
   }
 
-  private buildIntentConditionFromIntent(intent: Intent) {
-    const intentConditions = []
+  private buildConditionFromMailParticipants(
+    mailParticipants: MailParticipant,
+  ) {
+    const mailParticipantsConditions = []
 
-    if (intent.from && intent.from.length > 0) {
-      const fromConditions = intent.from.map((from) =>
+    if (mailParticipants.from && mailParticipants.from.length > 0) {
+      const fromConditions = mailParticipants.from.map((from) =>
         contains(`\"from\"`, from),
       )
-      intentConditions.push(
+      mailParticipantsConditions.push(
         fromConditions.length === 1 ? fromConditions[0]! : or(fromConditions),
       )
     }
 
-    if (intent.to && intent.to.length > 0) {
-      const toConditions = intent.to.map((to) => contains("to", to))
-      intentConditions.push(
+    if (mailParticipants.to && mailParticipants.to.length > 0) {
+      const toConditions = mailParticipants.to.map((to) => contains("to", to))
+      mailParticipantsConditions.push(
         toConditions.length === 1 ? toConditions[0]! : or(toConditions),
       )
     }
 
-    if (intent.cc && intent.cc.length > 0) {
-      const ccConditions = intent.cc.map((cc) => contains("cc", cc))
-      intentConditions.push(
+    if (mailParticipants.cc && mailParticipants.cc.length > 0) {
+      const ccConditions = mailParticipants.cc.map((cc) => contains("cc", cc))
+      mailParticipantsConditions.push(
         ccConditions.length === 1 ? ccConditions[0]! : or(ccConditions),
       )
     }
 
-    if (intent.bcc && intent.bcc.length > 0) {
-      const bccConditions = intent.bcc.map((bcc) => contains("bcc", bcc))
-      intentConditions.push(
+    if (mailParticipants.bcc && mailParticipants.bcc.length > 0) {
+      const bccConditions = mailParticipants.bcc.map((bcc) =>
+        contains("bcc", bcc),
+      )
+      mailParticipantsConditions.push(
         bccConditions.length === 1 ? bccConditions[0]! : or(bccConditions),
       )
     }
 
-    return intentConditions.length > 0 ? and(intentConditions) : null
+    return mailParticipantsConditions.length > 0
+      ? and(mailParticipantsConditions)
+      : null
   }
 
   HybridDefaultProfileForAgent = (
@@ -755,7 +758,7 @@ export class VespaService {
     notInMailLabels?: string[],
     allowedApps: Apps[] | null = null,
     dataSourceIds: string[] = [],
-    intent: Intent | null = null,
+    mailParticipants: MailParticipant | null = null,
     channelIds: string[] = [],
     processedCollectionSelections: CollectionVespaIds = {},
     driveIds: string[] = [],
@@ -827,7 +830,7 @@ export class VespaService {
               entity,
               timestampRange,
               notInMailLabels,
-              intent,
+              mailParticipants,
             ),
           )
           sources.add(mailSchema)
@@ -1336,7 +1339,7 @@ export class VespaService {
       maxHits = 400,
       recencyDecayRate = 0.02,
       isIntentSearch = false,
-      intent = {},
+      mailParticipants = {},
       isSlackConnected,
       isCalendarConnected,
       isDriveConnected,
@@ -1361,7 +1364,7 @@ export class VespaService {
       maxHits,
       recencyDecayRate,
       isIntentSearch,
-      intent,
+      mailParticipants,
       isSlackConnected,
       isCalendarConnected,
       isDriveConnected,
@@ -1387,7 +1390,7 @@ export class VespaService {
       maxHits = 400,
       recencyDecayRate = 0.02,
       isIntentSearch = false,
-      intent = {},
+      mailParticipants = {},
       isSlackConnected = false,
       isCalendarConnected = false,
       isDriveConnected = false,
@@ -1431,7 +1434,7 @@ export class VespaService {
       excludedIds,
       notInMailLabels,
       excludedApps,
-      intent,
+      mailParticipants,
       email,
     )
     // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
@@ -1600,7 +1603,7 @@ export class VespaService {
       maxHits = 400,
       recencyDecayRate = 0.02,
       dataSourceIds = [], // Ensure dataSourceIds is destructured here
-      intent = null,
+      mailParticipants = null,
       channelIds = [],
       driveIds = [], // docIds
       selectedItem = {},
@@ -1626,7 +1629,7 @@ export class VespaService {
       notInMailLabels,
       Apps,
       dataSourceIds, // Pass dataSourceIds here
-      intent,
+      mailParticipants,
       channelIds,
       processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
@@ -2023,7 +2026,7 @@ export class VespaService {
       email,
       excludedIds, // Added excludedIds here
       asc,
-      intent,
+      mailParticipants,
       channelIds,
     } = params
 
@@ -2101,9 +2104,9 @@ export class VespaService {
     }
 
     // Intent-based conditions - modular approach for different apps
-    if (intent) {
-      this.logger.debug("Processing intent-based filtering", {
-        intent,
+    if (mailParticipants) {
+      this.logger.debug("Processing mailParticipants-based filtering", {
+        mailParticipants,
         app,
         entity,
         schema,
@@ -2115,7 +2118,10 @@ export class VespaService {
         entity === MailEntity.Email &&
         schema === mailSchema
       ) {
-        const gmailIntentConditions = processGmailIntent(intent, this.logger)
+        const gmailIntentConditions = processGmailIntent(
+          mailParticipants,
+          this.logger,
+        )
         if (gmailIntentConditions.length > 0) {
           conditions.push(...gmailIntentConditions)
           this.logger.debug(
@@ -2123,8 +2129,8 @@ export class VespaService {
           )
         } else {
           this.logger.debug(
-            "Gmail intent provided but contains only names/non-specific identifiers - skipping intent filtering",
-            { intent },
+            "Gmail participants provided but contains only names/non-specific identifiers - skipping participant filtering",
+            { mailParticipants },
           )
         }
       }
@@ -2163,7 +2169,7 @@ export class VespaService {
       entity,
       limit,
       offset,
-      intentProvided: !!intent,
+      mailParticipantsProvided: !!mailParticipants,
       conditions: conditions.length > 0 ? conditions : "none",
     })
 

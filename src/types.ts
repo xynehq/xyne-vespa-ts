@@ -1535,7 +1535,7 @@ export type FileResponse = z.infer<typeof FileResponseSchema>
 
 export type SearchResponse = z.infer<typeof SearchResponseSchema>
 
-export const IntentSchema = z.object({
+export const MailParticipantSchema = z.object({
   from: z.array(z.string()).optional(),
   to: z.array(z.string()).optional(),
   cc: z.array(z.string()).optional(),
@@ -1543,7 +1543,7 @@ export const IntentSchema = z.object({
   subject: z.array(z.string()).optional(),
 })
 
-export type Intent = z.infer<typeof IntentSchema>
+export type MailParticipant = z.infer<typeof MailParticipantSchema>
 
 interface SpanAttributes {
   [key: string]: string | number | boolean | null
@@ -1607,7 +1607,7 @@ export type VespaQueryConfig = {
   recencyDecayRate: number
   dataSourceIds?: string[]
   isIntentSearch?: boolean
-  intent?: Intent | null
+  mailParticipants?: MailParticipant | null
   channelIds?: string[]
   collectionSelections?: Array<{
     collectionIds?: string[]
@@ -1633,7 +1633,7 @@ export interface GetItemsParams {
   email: string
   excludedIds?: string[]
   asc: boolean
-  intent?: Intent | null
+  mailParticipants?: MailParticipant | null
   channelIds?: string[]
 }
 

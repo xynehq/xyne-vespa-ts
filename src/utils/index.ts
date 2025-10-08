@@ -1,6 +1,5 @@
 import { int } from "zod"
-import type { ILogger } from "../types"
-import type { Intent } from "../types"
+import type { ILogger, MailParticipant } from "../types"
 import { YqlCondition } from "../yql/types"
 import { contains, or } from "../yql"
 
@@ -20,10 +19,10 @@ export const escapeYqlValue = (value: string): string => {
 
 // Gmail intent processing function
 export const processGmailIntent = (
-  intent: Intent,
+  mailParticipants: MailParticipant,
   logger: ILogger,
 ): YqlCondition[] => {
-  const intentConditions: YqlCondition[] = []
+  const mailParticipantsConditions: YqlCondition[] = []
 
   // Helper function to validate email addresses
   const isValidEmailAddress = (email: string): boolean => {
@@ -31,111 +30,139 @@ export const processGmailIntent = (
     return emailRegex.test(email)
   }
 
-  // VALIDATION: Process intent if there are actual email addresses OR subject fields
-  // DO NOT process intent for names without email addresses (unless subject is present)
+  // VALIDATION: Process mailParticipants if there are actual email addresses OR subject fields
+  // DO NOT process mailParticipants for names without email addresses (unless subject is present)
   const hasValidEmailAddresses =
-    intent &&
-    ((intent.from &&
-      intent.from.length > 0 &&
-      intent.from.some(isValidEmailAddress)) ||
-      (intent.to &&
-        intent.to.length > 0 &&
-        intent.to.some(isValidEmailAddress)) ||
-      (intent.cc &&
-        intent.cc.length > 0 &&
-        intent.cc.some(isValidEmailAddress)) ||
-      (intent.bcc &&
-        intent.bcc.length > 0 &&
-        intent.bcc.some(isValidEmailAddress)))
+    mailParticipants &&
+    ((mailParticipants.from &&
+      mailParticipants.from.length > 0 &&
+      mailParticipants.from.some(isValidEmailAddress)) ||
+      (mailParticipants.to &&
+        mailParticipants.to.length > 0 &&
+        mailParticipants.to.some(isValidEmailAddress)) ||
+      (mailParticipants.cc &&
+        mailParticipants.cc.length > 0 &&
+        mailParticipants.cc.some(isValidEmailAddress)) ||
+      (mailParticipants.bcc &&
+        mailParticipants.bcc.length > 0 &&
+        mailParticipants.bcc.some(isValidEmailAddress)))
 
-  const hasSubjectFields = intent && intent.subject && intent.subject.length > 0
+  const hasSubjectFields =
+    mailParticipants &&
+    mailParticipants.subject &&
+    mailParticipants.subject.length > 0
 
   // Process intent if we have valid email addresses OR subject fields
   if (!hasValidEmailAddresses && !hasSubjectFields) {
     logger.debug(
-      "Intent contains only names or no actionable identifiers - skipping Gmail intent filtering",
-      { intent },
+      "Mail participants contain only names or no actionable identifiers - skipping Gmail participants filtering",
+      { mailParticipants },
     )
     return [] // Return empty array if no valid email addresses or subjects found
   }
 
   logger.debug(
-    "Intent contains valid email addresses or subjects - processing Gmail intent filtering",
-    { intent },
+    "Mail participants contain valid email addresses or subjects - processing Gmail participants filtering",
+    { mailParticipants },
   )
 
   // Process 'from' field
-  if (intent.from && intent.from.length > 0) {
-    if (intent.from.length === 1 && intent.from[0]) {
+  if (mailParticipants.from && mailParticipants.from.length > 0) {
+    if (mailParticipants.from.length === 1 && mailParticipants.from[0]) {
       const fromCondition = contains(
         `\"from\"`,
-        `${escapeYqlValue(intent.from[0])}`,
+        `${escapeYqlValue(mailParticipants.from[0])}`,
       )
-      intentConditions.push(fromCondition)
+      mailParticipantsConditions.push(fromCondition)
     } else {
-      const fromConditions = intent.from.map((email) =>
+      const fromConditions = mailParticipants.from.map((email) =>
         contains(`\"from\"`, `${escapeYqlValue(email)}`),
       )
-      intentConditions.push(or(fromConditions))
+      mailParticipantsConditions.push(or(fromConditions))
     }
   }
 
   // Process 'to' field
-  if (intent.to && intent.to.length > 0 && intent.to[0]) {
-    if (intent.to.length === 1) {
-      const toCondition = contains(`\"to\"`, `${escapeYqlValue(intent.to[0])}`)
-      intentConditions.push(toCondition)
+  if (
+    mailParticipants.to &&
+    mailParticipants.to.length > 0 &&
+    mailParticipants.to[0]
+  ) {
+    if (mailParticipants.to.length === 1) {
+      const toCondition = contains(
+        `\"to\"`,
+        `${escapeYqlValue(mailParticipants.to[0])}`,
+      )
+      mailParticipantsConditions.push(toCondition)
     } else {
-      const toConditions = intent.to.map((email) =>
+      const toConditions = mailParticipants.to.map((email) =>
         contains(`\"to\"`, `${escapeYqlValue(email)}`),
       )
-      intentConditions.push(or(toConditions))
+      mailParticipantsConditions.push(or(toConditions))
     }
   }
 
   // Process 'cc' field
-  if (intent.cc && intent.cc.length > 0 && intent.cc[0]) {
-    if (intent.cc.length === 1) {
-      const ccCondition = contains("cc", `${escapeYqlValue(intent.cc[0])}`)
-      intentConditions.push(ccCondition)
+  if (
+    mailParticipants.cc &&
+    mailParticipants.cc.length > 0 &&
+    mailParticipants.cc[0]
+  ) {
+    if (mailParticipants.cc.length === 1) {
+      const ccCondition = contains(
+        "cc",
+        `${escapeYqlValue(mailParticipants.cc[0])}`,
+      )
+      mailParticipantsConditions.push(ccCondition)
     } else {
-      const ccConditions = intent.cc.map((email) =>
+      const ccConditions = mailParticipants.cc.map((email) =>
         contains("cc", `${escapeYqlValue(email)}`),
       )
-      intentConditions.push(or(ccConditions))
+      mailParticipantsConditions.push(or(ccConditions))
     }
   }
 
   // Process 'bcc' field
-  if (intent.bcc && intent.bcc.length > 0 && intent.bcc[0]) {
-    if (intent.bcc.length === 1) {
-      const bccCondition = contains("bcc", `${escapeYqlValue(intent.bcc[0])}`)
-      intentConditions.push(bccCondition)
+  if (
+    mailParticipants.bcc &&
+    mailParticipants.bcc.length > 0 &&
+    mailParticipants.bcc[0]
+  ) {
+    if (mailParticipants.bcc.length === 1) {
+      const bccCondition = contains(
+        "bcc",
+        `${escapeYqlValue(mailParticipants.bcc[0])}`,
+      )
+      mailParticipantsConditions.push(bccCondition)
     } else {
-      const bccConditions = intent.bcc.map((email) =>
+      const bccConditions = mailParticipants.bcc.map((email) =>
         contains("bcc", `${escapeYqlValue(email)}`),
       )
-      intentConditions.push(or(bccConditions))
+      mailParticipantsConditions.push(or(bccConditions))
     }
   }
 
   // Process 'subject' field
-  if (intent.subject && intent.subject.length > 0 && intent.subject[0]) {
-    if (intent.subject.length === 1) {
+  if (
+    mailParticipants.subject &&
+    mailParticipants.subject.length > 0 &&
+    mailParticipants.subject[0]
+  ) {
+    if (mailParticipants.subject.length === 1) {
       const subjectCondition = contains(
         "subject",
-        `${escapeYqlValue(intent.subject[0])}`,
+        `${escapeYqlValue(mailParticipants.subject[0])}`,
       )
-      intentConditions.push(subjectCondition)
+      mailParticipantsConditions.push(subjectCondition)
     } else {
-      const subjectConditions = intent.subject.map((subj) =>
+      const subjectConditions = mailParticipants.subject.map((subj) =>
         contains("subject", `${escapeYqlValue(subj)}`),
       )
-      intentConditions.push(or(subjectConditions))
+      mailParticipantsConditions.push(or(subjectConditions))
     }
   }
 
-  return intentConditions
+  return mailParticipantsConditions
 }
 
 export const dateToUnixTimestamp = (
