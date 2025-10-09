@@ -1005,7 +1005,7 @@ export class VespaService {
     let conditions: YqlCondition[] = [
       or([
         userInput("@query", hits),
-        nearestNeighbor("e", "text_embeddings", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
       ]),
     ]
 
@@ -1299,7 +1299,7 @@ export class VespaService {
       excludedApps, // excludedApps as fourth parameter
       email,
     )
-    console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2743,7 +2743,7 @@ export class VespaService {
     const conditions: YqlCondition[] = [
       or([
         userInput("@query", limit),
-        nearestNeighbor("e", "chunk_embeddings", limit),
+        nearestNeighbor("chunk_embeddings", "e", limit),
       ]),
     ]
 
