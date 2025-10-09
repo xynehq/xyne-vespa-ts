@@ -29,7 +29,14 @@ import {
   orWithPermissions,
 } from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
-import { Apps, Entity, SearchModes, userSchema, VespaSchema } from "../types"
+import {
+  Apps,
+  Entity,
+  KbItemsSchema,
+  SearchModes,
+  userSchema,
+  VespaSchema,
+} from "../types"
 import { YqlProfile } from "./types"
 
 export class YqlBuilder {
@@ -466,8 +473,12 @@ export class YqlBuilder {
       finalCondition = this.createAnd(allConditions)
     }
 
+    const isOnlyKbSource =
+      this.currentSources.length === 1 &&
+      this.currentSources[0] === KbItemsSchema
     // Apply permissions only at the top level if permissions are enabled
-    if (this.withPermissions && this.userEmail) {
+    // we also we need to skip permission checks for kb_items
+    if (this.withPermissions && this.userEmail && !isOnlyKbSource) {
       const processedCondition = this.applyTopLevelPermissions(finalCondition)
       return processedCondition.toString()
     }
