@@ -985,10 +985,10 @@ export class VespaService {
 
     return YqlBuilder.create({
       email,
-      sources: AllSources,
+      sources: this.schemaSources,
       targetHits: hits,
     })
-      .from(AllSources)
+      .from(this.schemaSources)
       .where(and(searchConditions))
       .buildProfile(profile)
   }
@@ -1664,7 +1664,7 @@ export class VespaService {
       .catch((error: any) => {
         throw new ErrorPerformingSearch({
           cause: error as Error,
-          sources: AllSources.join(", "),
+          sources: this.schemaSources.join(", "),
         })
       })
   }
