@@ -29,7 +29,14 @@ import {
   orWithPermissions,
 } from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
-import { Apps, Entity, SearchModes, userSchema, VespaSchema } from "../types"
+import {
+  Apps,
+  Entity,
+  KbItemsSchema,
+  SearchModes,
+  userSchema,
+  VespaSchema,
+} from "../types"
 import { YqlProfile } from "./types"
 
 export class YqlBuilder {
@@ -43,6 +50,8 @@ export class YqlBuilder {
   private groupByClause?: string
   private appCondition?: YqlCondition
   private entityCondition?: YqlCondition
+  private excludeDocIdCondtion?: YqlCondition
+  private includeDocIdCondtion?: YqlCondition
   private orderByClause?: string
 
   private permissionWrapper?: PermissionWrapper
@@ -288,7 +297,7 @@ export class YqlBuilder {
   excludeDocIds(docIds: string[]): this {
     const exclusion = exclude(docIds)
     if (!exclusion.isEmpty()) {
-      return this.where(exclusion)
+      this.excludeDocIdCondtion = exclusion
     }
     return this
   }
@@ -299,43 +308,8 @@ export class YqlBuilder {
   includeDocIds(docIds: string[]): this {
     const inclusion = include("docId", docIds)
     if (!inclusion.isEmpty()) {
-      return this.where(inclusion)
+      this.includeDocIdCondtion = inclusion
     }
-    return this
-  }
-
-  /**
-   * Add inclusion condition for any field
-   */
-  includeValues(field: FieldName, values: string[]): this {
-    const inclusion = include(field, values)
-    if (!inclusion.isEmpty()) {
-      return this.where(inclusion)
-    }
-    return this
-  }
-
-  /**
-   * Add mail label exclusion (Gmail specific)
-   */
-  excludeMailLabels(labels: string[]): this {
-    if (!labels || labels.length === 0) {
-      return this
-    }
-
-    const labelConditions = labels
-      .filter((label) => label && label.trim())
-      .map((label) => contains("labels", label.trim()))
-
-    if (labelConditions.length > 0) {
-      const combinedLabels =
-        labelConditions.length === 1
-          ? labelConditions[0]!
-          : this.createOr(labelConditions).parenthesize()
-
-      return this.where(combinedLabels.not())
-    }
-
     return this
   }
 
@@ -472,6 +446,15 @@ export class YqlBuilder {
       allConditions.push(this.entityCondition)
     }
 
+    // Exclude doc IDs filter
+    if (this.excludeDocIdCondtion) {
+      allConditions.push(this.excludeDocIdCondtion)
+    }
+    // Include doc IDs filter
+    if (this.includeDocIdCondtion) {
+      allConditions.push(this.includeDocIdCondtion)
+    }
+
     // If we have permissions enabled but no conditions, add just permissions
     if (allConditions.length === 0 && this.withPermissions && this.userEmail) {
       const permissionCondition = this.buildPermissionCondition()
@@ -490,8 +473,12 @@ export class YqlBuilder {
       finalCondition = this.createAnd(allConditions)
     }
 
+    const isOnlyKbSource =
+      this.currentSources.length === 1 &&
+      this.currentSources[0] === KbItemsSchema
     // Apply permissions only at the top level if permissions are enabled
-    if (this.withPermissions && this.userEmail) {
+    // we also we need to skip permission checks for kb_items
+    if (this.withPermissions && this.userEmail && !isOnlyKbSource) {
       const processedCondition = this.applyTopLevelPermissions(finalCondition)
       return processedCondition.toString()
     }
