@@ -43,6 +43,8 @@ export class YqlBuilder {
   private groupByClause?: string
   private appCondition?: YqlCondition
   private entityCondition?: YqlCondition
+  private excludeDocIdCondtion?: YqlCondition
+  private includeDocIdCondtion?: YqlCondition
   private orderByClause?: string
 
   private permissionWrapper?: PermissionWrapper
@@ -288,7 +290,7 @@ export class YqlBuilder {
   excludeDocIds(docIds: string[]): this {
     const exclusion = exclude(docIds)
     if (!exclusion.isEmpty()) {
-      return this.where(exclusion)
+      this.excludeDocIdCondtion = exclusion
     }
     return this
   }
@@ -299,43 +301,8 @@ export class YqlBuilder {
   includeDocIds(docIds: string[]): this {
     const inclusion = include("docId", docIds)
     if (!inclusion.isEmpty()) {
-      return this.where(inclusion)
+      this.includeDocIdCondtion = inclusion
     }
-    return this
-  }
-
-  /**
-   * Add inclusion condition for any field
-   */
-  includeValues(field: FieldName, values: string[]): this {
-    const inclusion = include(field, values)
-    if (!inclusion.isEmpty()) {
-      return this.where(inclusion)
-    }
-    return this
-  }
-
-  /**
-   * Add mail label exclusion (Gmail specific)
-   */
-  excludeMailLabels(labels: string[]): this {
-    if (!labels || labels.length === 0) {
-      return this
-    }
-
-    const labelConditions = labels
-      .filter((label) => label && label.trim())
-      .map((label) => contains("labels", label.trim()))
-
-    if (labelConditions.length > 0) {
-      const combinedLabels =
-        labelConditions.length === 1
-          ? labelConditions[0]!
-          : this.createOr(labelConditions).parenthesize()
-
-      return this.where(combinedLabels.not())
-    }
-
     return this
   }
 
@@ -470,6 +437,15 @@ export class YqlBuilder {
     // Entity filter
     if (this.entityCondition) {
       allConditions.push(this.entityCondition)
+    }
+
+    // Exclude doc IDs filter
+    if (this.excludeDocIdCondtion) {
+      allConditions.push(this.excludeDocIdCondtion)
+    }
+    // Include doc IDs filter
+    if (this.includeDocIdCondtion) {
+      allConditions.push(this.includeDocIdCondtion)
     }
 
     // If we have permissions enabled but no conditions, add just permissions
