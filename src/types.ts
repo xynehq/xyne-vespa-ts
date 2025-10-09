@@ -1591,6 +1591,7 @@ export enum SearchModes {
   Random = "default_random",
   GlobalSorted = "global_sorted",
   BoostTitle = "title_boosted_hybrid",
+  attachmentRank = "attachmentRank",
 }
 
 export type CollectionVespaIds = {
