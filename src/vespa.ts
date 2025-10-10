@@ -2031,6 +2031,7 @@ export class VespaService {
     let { app, entity } = params
 
     const schemas = Array.isArray(schema) ? schema : [schema]
+
     const includesApp = (targetApp: Apps): boolean => {
       if (!app) return false
       if (Array.isArray(app)) {
@@ -2156,81 +2157,71 @@ export class VespaService {
       conditions.push(or(driveIdConditions))
     }
 
-    const kbConditions = []
+    let kbConditions: YqlCondition[] = []
     if (includesApp(Apps.KnowledgeBase) && processedCollectionSelections) {
-      kbConditions.push(
-        Or.withoutPermissions(
-          this.buildCollectionConditions(processedCollectionSelections),
-        ),
+      kbConditions = this.buildCollectionConditions(
+        processedCollectionSelections,
       )
     }
 
-    const safeDriveIds = driveIds || []
-    // Determine if permission filtering is needed
-    // Logic: Don't require permissions if we have specific IDs/conditions to filter by
-    // Require permissions for broad searches without specific filters
-    const isRequirePermission = (() => {
-      // If no app specified, require permissions for broad search
-      if (!app) return true
+    let appCondition: YqlCondition | undefined
+    if (app) {
+      appCondition = Array.isArray(app)
+        ? or(app.map((a) => contains("app", a)))
+        : contains("app", app)
+    }
 
-      // For Knowledge Base: don't require permissions if we have specific conditions
-      if (includesApp(Apps.KnowledgeBase) && kbConditions.length > 0) {
-        return false
+    let entityCondition: YqlCondition | undefined
+    if (entity) {
+      entityCondition = Array.isArray(entity)
+        ? or(entity.map((e) => contains("entity", e)))
+        : contains("entity", entity)
+    }
+
+    const yqlBuilder = YqlBuilder.create({ email }).from(schema)
+
+    if (!appCondition && !entityCondition) {
+      const whereConditions: YqlCondition[] = []
+
+      if (conditions.length > 0) {
+        whereConditions.push(or(conditions))
       }
 
-      // For Google Drive: don't require permissions if we have specific drive IDs
-      if (includesApp(Apps.GoogleDrive) && safeDriveIds.length > 0) {
-        return false
+      whereConditions.push(this.getExcludeAttachmentCondition())
+
+      if (kbConditions.length > 0) {
+        whereConditions.push(Or.withoutPermissions(kbConditions))
       }
 
-      // For Slack: don't require permissions if we have specific channel IDs
-      if (includesApp(Apps.Slack) && slackChannelIds.length > 0) {
-        return false
-      }
-
-      // KnowledgeBase will won't have permissions applied
-      if (includesApp(Apps.KnowledgeBase)) {
-        return false
-      }
-      // Default: require permissions for broad searches
-      return true
-    })()
-
-    console.log("isRequirePermission", isRequirePermission)
-    let finalConditions = []
-    if (kbConditions.length > 0 && includesApp(Apps.KnowledgeBase)) {
-      finalConditions.push(
-        Or.withoutPermissions([
-          or(conditions),
-          Or.withoutPermissions(kbConditions),
-        ]),
+      yqlBuilder.where(
+        kbConditions.length > 0
+          ? Or.withoutPermissions(whereConditions)
+          : and(whereConditions),
       )
     } else {
-      finalConditions = [...conditions]
-    }
+      const appEntityConditions: YqlCondition[] = []
+      if (appCondition) appEntityConditions.push(appCondition)
+      if (entityCondition) appEntityConditions.push(entityCondition)
 
-    const yqlBuilder = YqlBuilder.create({
-      email: isRequirePermission ? email : undefined,
-    }).from(schema)
+      const mainConditions: YqlCondition[] = []
 
-    if (finalConditions.length) {
-      if (!app && !entity) {
-        yqlBuilder
-          .where(
-            and([or(finalConditions), this.getExcludeAttachmentCondition()]),
-          )
-          .offset(offset ?? 0)
-      } else {
-        yqlBuilder.where(or(finalConditions)).offset(offset ?? 0)
+      if (conditions.length > 0 && appEntityConditions.length > 0) {
+        mainConditions.push(and([or(conditions), or(appEntityConditions)]))
+      } else if (conditions.length > 0) {
+        mainConditions.push(or(conditions))
+      } else if (appEntityConditions.length > 0) {
+        mainConditions.push(or(appEntityConditions))
       }
-    }
 
-    if (app) {
-      yqlBuilder.filterByApp(app)
-    }
+      if (kbConditions.length > 0) {
+        mainConditions.push(Or.withoutPermissions(kbConditions))
+      }
 
-    if (entity) {
-      yqlBuilder.filterByEntity(entity)
+      yqlBuilder.where(
+        kbConditions.length > 0
+          ? Or.withoutPermissions(mainConditions)
+          : and(mainConditions),
+      )
     }
 
     if (timestampField.length > 0 && timestampField[0]) {
@@ -2241,7 +2232,7 @@ export class VespaService {
       yqlBuilder.excludeDocIds(excludedIds)
     }
 
-    const yql = yqlBuilder.build()
+    const yql = yqlBuilder.offset(offset ?? 0).build()
     console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] Query Details:`, {
       schema,
