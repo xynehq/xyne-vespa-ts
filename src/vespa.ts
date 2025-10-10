@@ -59,7 +59,6 @@ import {
   matches,
   greaterThanOrEqual,
   lessThanOrEqual,
-  andWithoutPermissions,
   fuzzy,
   not,
 } from "./yql"
@@ -745,6 +744,37 @@ export class VespaService {
     return intentConditions.length > 0 ? and(intentConditions) : null
   }
 
+  // knowledge base collections conditions will not have permissions checks
+  buildCollectionConditions = (
+    selections: CollectionVespaIds,
+  ): YqlCondition[] => {
+    const conds: YqlCondition[] = []
+    const { collectionIds, collectionFolderIds, collectionFileIds } = selections
+
+    if (collectionIds?.length) {
+      conds.push(
+        Or.withoutPermissions(
+          collectionIds.map((id) => contains("clId", id.trim())),
+        ),
+      )
+    }
+    if (collectionFolderIds?.length) {
+      conds.push(
+        Or.withoutPermissions(
+          collectionFolderIds.map((id) => contains("clFd", id.trim())),
+        ),
+      )
+    }
+    if (collectionFileIds?.length) {
+      conds.push(
+        Or.withoutPermissions(
+          collectionFileIds.map((id) => contains("docId", id.trim())),
+        ),
+      )
+    }
+    return conds
+  }
+
   HybridDefaultProfileForAgent = (
     hits: number,
     app: Apps | Apps[] | null,
@@ -770,38 +800,6 @@ export class VespaService {
 
       const conditions = ids.map((id) => contains(fieldName, id.trim()))
       return Or.withoutPermissions(conditions)
-    }
-
-    // knowledge base collections conditions will not have permissions checks
-    const buildCollectionConditions = (
-      selections: CollectionVespaIds,
-    ): YqlCondition[] => {
-      const conds: YqlCondition[] = []
-      const { collectionIds, collectionFolderIds, collectionFileIds } =
-        selections
-
-      if (collectionIds?.length) {
-        conds.push(
-          Or.withoutPermissions(
-            collectionIds.map((id) => contains("clId", id.trim())),
-          ),
-        )
-      }
-      if (collectionFolderIds?.length) {
-        conds.push(
-          Or.withoutPermissions(
-            collectionFolderIds.map((id) => contains("clFd", id.trim())),
-          ),
-        )
-      }
-      if (collectionFileIds?.length) {
-        conds.push(
-          Or.withoutPermissions(
-            collectionFileIds.map((id) => contains("docId", id.trim())),
-          ),
-        )
-      }
-      return conds
     }
 
     // --- App handler dispatcher ---
@@ -887,7 +885,7 @@ export class VespaService {
           break
 
         case Apps.KnowledgeBase:
-          const collectionConds = buildCollectionConditions(
+          const collectionConds = this.buildCollectionConditions(
             processedCollectionSelections,
           )
           if (collectionConds.length > 0) {
@@ -1603,7 +1601,7 @@ export class VespaService {
       intent = null,
       channelIds = [],
       driveIds = [], // docIds
-      selectedItem = {},
+      selectedItem,
       processedCollectionSelections = {},
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
@@ -2025,16 +2023,41 @@ export class VespaService {
       asc,
       intent,
       channelIds,
+      processedCollectionSelections,
+      selectedItem,
+      driveIds,
     } = params
 
     let { app, entity } = params
 
     const schemas = Array.isArray(schema) ? schema : [schema]
+    // Helper function to check if app (single or array) includes a specific app
+    const appIncludesApp = (
+      appValue: Apps | Apps[] | null | undefined,
+      targetApp: Apps,
+    ): boolean => {
+      if (!appValue) return false
+      if (Array.isArray(appValue)) {
+        return appValue.includes(targetApp)
+      }
+      return appValue === targetApp
+    }
+
     // Construct conditions based on parameters
     let conditions: YqlCondition[] = []
+    const slackChannelIds = selectedItem
+      ? selectedItem[Apps.Slack]
+        ? selectedItem[Apps.Slack]
+        : channelIds
+      : []
 
-    if (app === Apps.Slack && channelIds && channelIds.length > 0) {
-      const channelIdConditions = channelIds.map((id) =>
+    if (
+      appIncludesApp(app, Apps.Slack) &&
+      slackChannelIds &&
+      slackChannelIds.length > 0
+    ) {
+      if (!schemas.includes(chatMessageSchema)) schemas.push(chatMessageSchema)
+      const channelIdConditions = slackChannelIds.map((id) =>
         contains("channelId", id.trim()),
       )
       conditions.push(or(channelIdConditions))
@@ -2130,22 +2153,96 @@ export class VespaService {
       }
     }
 
+    if (driveIds && driveIds.length > 0) {
+      const driveIdConditions = driveIds.map((id) =>
+        contains("docId", id.trim()),
+      )
+      conditions.push(or(driveIdConditions))
+    }
+
+    let kbConditions: YqlCondition[] = []
+    if (
+      appIncludesApp(app, Apps.KnowledgeBase) &&
+      processedCollectionSelections
+    ) {
+      kbConditions = this.buildCollectionConditions(
+        processedCollectionSelections,
+      )
+    }
+
+    let appCondition
+    if (app) {
+      appCondition = Array.isArray(app)
+        ? app.map((a) => contains("app", a))
+        : contains("app", app)
+    }
+
+    let entityCondition
+    if (entity) {
+      entityCondition = Array.isArray(entity)
+        ? entity.map((e) => contains("entity", e))
+        : contains("entity", entity)
+    }
+
     const yqlBuilder = YqlBuilder.create({ email }).from(schema)
 
-    if (!app && !entity) {
-      yqlBuilder
-        .where(and([or(conditions), this.getExcludeAttachmentCondition()]))
-        .offset(offset ?? 0)
-    } else {
-      yqlBuilder.whereOr(...conditions).offset(offset ?? 0)
+    if (!conditions.length) {
+      throw new Error("Couldn't create YQL at least one condition is required ")
     }
 
-    if (app) {
-      yqlBuilder.filterByApp(app)
+    const whereConditions: YqlCondition[] = [...conditions]
+
+    if (!appCondition && !entityCondition) {
+      yqlBuilder
+        .where(
+          and([
+            kbConditions.length
+              ? Or.withoutPermissions(whereConditions.concat(kbConditions))
+              : or(whereConditions),
+            this.getExcludeAttachmentCondition(),
+          ]),
+        )
+        .offset(offset ?? 0)
+    } else {
+      const appEntityConditions: YqlCondition[] = []
+      if (appCondition) {
+        appEntityConditions.push(
+          kbConditions.length
+            ? Or.withoutPermissions(
+                Array.isArray(appCondition) ? appCondition : [appCondition],
+              )
+            : or(Array.isArray(appCondition) ? appCondition : [appCondition]),
+        )
+      }
+
+      if (entityCondition) {
+        appEntityConditions.push(
+          kbConditions.length
+            ? Or.withoutPermissions(
+                Array.isArray(entityCondition)
+                  ? entityCondition
+                  : [entityCondition],
+              )
+            : or(
+                Array.isArray(entityCondition)
+                  ? entityCondition
+                  : [entityCondition],
+              ),
+        )
+      }
+
+      yqlBuilder
+        .where(
+          kbConditions.length
+            ? And.withoutPermissions([
+                Or.withoutPermissions(whereConditions.concat(kbConditions)),
+                Or.withoutPermissions(appEntityConditions),
+              ])
+            : and([or(whereConditions), or(appEntityConditions)]),
+        )
+        .offset(offset ?? 0)
     }
-    if (entity) {
-      yqlBuilder.filterByEntity(entity)
-    }
+
     if (timestampField.length > 0 && timestampField[0]) {
       yqlBuilder.orderBy(timestampField[0], asc ? "asc" : "desc")
     }
@@ -2155,8 +2252,7 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.build()
-    // console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
-    this.logger.info(`[getItems] YQL Query: ${yql}`)
+    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] Query Details:`, {
       schema,
       app,

@@ -1623,7 +1623,7 @@ export type VespaQueryConfig = {
   }> // Updated to support key-value pairs instead of prefixed strings
   processedCollectionSelections?: CollectionVespaIds
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
-  selectedItem?: {}
+  selectedItem?: Record<Apps, string[]>
   isSlackConnected?: boolean
   isDriveConnected?: boolean
   isGmailConnected?: boolean
@@ -1642,6 +1642,9 @@ export interface GetItemsParams {
   asc: boolean
   intent?: Intent | null
   channelIds?: string[]
+  driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
+  processedCollectionSelections?: CollectionVespaIds
+  selectedItem?: Record<Apps, string[]>
 }
 
 export interface GetThreadItemsParams {
