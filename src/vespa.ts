@@ -2031,15 +2031,12 @@ export class VespaService {
     let { app, entity } = params
 
     const schemas = Array.isArray(schema) ? schema : [schema]
-    const includesApp = (
-      appValue: Apps | Apps[] | null | undefined,
-      targetApp: Apps,
-    ): boolean => {
-      if (!appValue) return false
-      if (Array.isArray(appValue)) {
-        return appValue.includes(targetApp)
+    const includesApp = (targetApp: Apps): boolean => {
+      if (!app) return false
+      if (Array.isArray(app)) {
+        return app.includes(targetApp)
       }
-      return appValue === targetApp
+      return app === targetApp
     }
 
     // Construct conditions based on parameters
@@ -2051,7 +2048,7 @@ export class VespaService {
       : []
 
     if (
-      includesApp(app, Apps.Slack) &&
+      includesApp(Apps.Slack) &&
       slackChannelIds &&
       slackChannelIds.length > 0
     ) {
@@ -2133,7 +2130,7 @@ export class VespaService {
 
       // Handle Gmail intent filtering
       if (
-        app === Apps.Gmail &&
+        includesApp(Apps.Gmail) &&
         entity === MailEntity.Email &&
         schema === mailSchema
       ) {
@@ -2152,7 +2149,7 @@ export class VespaService {
       }
     }
 
-    if (driveIds && driveIds.length > 0) {
+    if (driveIds && driveIds.length > 0 && includesApp(Apps.GoogleDrive)) {
       const driveIdConditions = driveIds.map((id) =>
         contains("docId", id.trim()),
       )
@@ -2160,7 +2157,7 @@ export class VespaService {
     }
 
     const kbConditions = []
-    if (includesApp(app, Apps.KnowledgeBase) && processedCollectionSelections) {
+    if (includesApp(Apps.KnowledgeBase) && processedCollectionSelections) {
       kbConditions.push(
         Or.withoutPermissions(
           this.buildCollectionConditions(processedCollectionSelections),
@@ -2177,22 +2174,22 @@ export class VespaService {
       if (!app) return true
 
       // For Knowledge Base: don't require permissions if we have specific conditions
-      if (includesApp(app, Apps.KnowledgeBase) && kbConditions.length > 0) {
+      if (includesApp(Apps.KnowledgeBase) && kbConditions.length > 0) {
         return false
       }
 
       // For Google Drive: don't require permissions if we have specific drive IDs
-      if (includesApp(app, Apps.GoogleDrive) && safeDriveIds.length > 0) {
+      if (includesApp(Apps.GoogleDrive) && safeDriveIds.length > 0) {
         return false
       }
 
       // For Slack: don't require permissions if we have specific channel IDs
-      if (includesApp(app, Apps.Slack) && slackChannelIds.length > 0) {
+      if (includesApp(Apps.Slack) && slackChannelIds.length > 0) {
         return false
       }
 
       // KnowledgeBase will won't have permissions applied
-      if (includesApp(app, Apps.KnowledgeBase)) {
+      if (includesApp(Apps.KnowledgeBase)) {
         return false
       }
       // Default: require permissions for broad searches
@@ -2201,7 +2198,7 @@ export class VespaService {
 
     console.log("isRequirePermission", isRequirePermission)
     let finalConditions = []
-    if (kbConditions.length > 0) {
+    if (kbConditions.length > 0 && includesApp(Apps.KnowledgeBase)) {
       finalConditions.push(
         Or.withoutPermissions([
           or(conditions),
