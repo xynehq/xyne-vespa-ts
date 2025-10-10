@@ -2031,8 +2031,7 @@ export class VespaService {
     let { app, entity } = params
 
     const schemas = Array.isArray(schema) ? schema : [schema]
-    // Helper function to check if app (single or array) includes a specific app
-    const appIncludesApp = (
+    const includesApp = (
       appValue: Apps | Apps[] | null | undefined,
       targetApp: Apps,
     ): boolean => {
@@ -2048,11 +2047,11 @@ export class VespaService {
     const slackChannelIds = selectedItem
       ? selectedItem[Apps.Slack]
         ? selectedItem[Apps.Slack]
-        : channelIds
+        : channelIds || []
       : []
 
     if (
-      appIncludesApp(app, Apps.Slack) &&
+      includesApp(app, Apps.Slack) &&
       slackChannelIds &&
       slackChannelIds.length > 0
     ) {
@@ -2161,10 +2160,7 @@ export class VespaService {
     }
 
     const kbConditions = []
-    if (
-      appIncludesApp(app, Apps.KnowledgeBase) &&
-      processedCollectionSelections
-    ) {
+    if (includesApp(app, Apps.KnowledgeBase) && processedCollectionSelections) {
       kbConditions.push(
         Or.withoutPermissions(
           this.buildCollectionConditions(processedCollectionSelections),
@@ -2172,16 +2168,38 @@ export class VespaService {
       )
     }
 
+    const safeDriveIds = driveIds || []
     // Determine if permission filtering is needed
-    // if we searching in KB or directly with the docIds then don't require permission filtering
-    // if app or entity is not specified, we are searching across all apps/entities - require permission filtering
-    // if docIds are specified or app contains KB we are narrowing down the search - don't require permission filtering
-    const isRequirePermission =
-      (!kbConditions.length && app?.includes(Apps.KnowledgeBase)) ||
-      (!driveIds?.length && app?.includes(Apps.GoogleDrive)) ||
-      (!slackChannelIds?.length && app?.includes(Apps.Slack)) ||
-      !app?.includes(Apps.KnowledgeBase)
+    // Logic: Don't require permissions if we have specific IDs/conditions to filter by
+    // Require permissions for broad searches without specific filters
+    const isRequirePermission = (() => {
+      // If no app specified, require permissions for broad search
+      if (!app) return true
 
+      // For Knowledge Base: don't require permissions if we have specific conditions
+      if (includesApp(app, Apps.KnowledgeBase) && kbConditions.length > 0) {
+        return false
+      }
+
+      // For Google Drive: don't require permissions if we have specific drive IDs
+      if (includesApp(app, Apps.GoogleDrive) && safeDriveIds.length > 0) {
+        return false
+      }
+
+      // For Slack: don't require permissions if we have specific channel IDs
+      if (includesApp(app, Apps.Slack) && slackChannelIds.length > 0) {
+        return false
+      }
+
+      // KnowledgeBase will won't have permissions applied
+      if (includesApp(app, Apps.KnowledgeBase)) {
+        return false
+      }
+      // Default: require permissions for broad searches
+      return true
+    })()
+
+    console.log("isRequirePermission", isRequirePermission)
     let finalConditions = []
     if (kbConditions.length > 0) {
       finalConditions.push(
