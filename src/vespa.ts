@@ -2160,87 +2160,62 @@ export class VespaService {
       conditions.push(or(driveIdConditions))
     }
 
-    let kbConditions: YqlCondition[] = []
+    const kbConditions = []
     if (
       appIncludesApp(app, Apps.KnowledgeBase) &&
       processedCollectionSelections
     ) {
-      kbConditions = this.buildCollectionConditions(
-        processedCollectionSelections,
+      kbConditions.push(
+        Or.withoutPermissions(
+          this.buildCollectionConditions(processedCollectionSelections),
+        ),
       )
     }
 
-    let appCondition
-    if (app) {
-      appCondition = Array.isArray(app)
-        ? app.map((a) => contains("app", a))
-        : contains("app", app)
-    }
+    // Determine if permission filtering is needed
+    // if we searching in KB or directly with the docIds then don't require permission filtering
+    // if app or entity is not specified, we are searching across all apps/entities - require permission filtering
+    // if docIds are specified or app contains KB we are narrowing down the search - don't require permission filtering
+    const isRequirePermission =
+      (!kbConditions.length && app?.includes(Apps.KnowledgeBase)) ||
+      (!driveIds?.length && app?.includes(Apps.GoogleDrive)) ||
+      (!slackChannelIds?.length && app?.includes(Apps.Slack)) ||
+      !app?.includes(Apps.KnowledgeBase)
 
-    let entityCondition
-    if (entity) {
-      entityCondition = Array.isArray(entity)
-        ? entity.map((e) => contains("entity", e))
-        : contains("entity", entity)
-    }
-
-    const yqlBuilder = YqlBuilder.create({ email }).from(schema)
-
-    if (!conditions.length) {
-      throw new Error("Couldn't create YQL at least one condition is required ")
-    }
-
-    const whereConditions: YqlCondition[] = [...conditions]
-
-    if (!appCondition && !entityCondition) {
-      yqlBuilder
-        .where(
-          and([
-            kbConditions.length
-              ? Or.withoutPermissions(whereConditions.concat(kbConditions))
-              : or(whereConditions),
-            this.getExcludeAttachmentCondition(),
-          ]),
-        )
-        .offset(offset ?? 0)
+    let finalConditions = []
+    if (kbConditions.length > 0) {
+      finalConditions.push(
+        Or.withoutPermissions([
+          or(conditions),
+          Or.withoutPermissions(kbConditions),
+        ]),
+      )
     } else {
-      const appEntityConditions: YqlCondition[] = []
-      if (appCondition) {
-        appEntityConditions.push(
-          kbConditions.length
-            ? Or.withoutPermissions(
-                Array.isArray(appCondition) ? appCondition : [appCondition],
-              )
-            : or(Array.isArray(appCondition) ? appCondition : [appCondition]),
-        )
-      }
+      finalConditions = [...conditions]
+    }
 
-      if (entityCondition) {
-        appEntityConditions.push(
-          kbConditions.length
-            ? Or.withoutPermissions(
-                Array.isArray(entityCondition)
-                  ? entityCondition
-                  : [entityCondition],
-              )
-            : or(
-                Array.isArray(entityCondition)
-                  ? entityCondition
-                  : [entityCondition],
-              ),
-        )
-      }
+    const yqlBuilder = YqlBuilder.create({
+      email: isRequirePermission ? email : undefined,
+    }).from(schema)
 
-      yqlBuilder
-        .where(
-          kbConditions.length
-            ? And.withoutPermissions([
-                Or.withoutPermissions(whereConditions.concat(kbConditions)),
-                Or.withoutPermissions(appEntityConditions),
-              ])
-            : and([or(whereConditions), or(appEntityConditions)]),
-        )
-        .offset(offset ?? 0)
+    if (finalConditions.length) {
+      if (!app && !entity) {
+        yqlBuilder
+          .where(
+            and([or(finalConditions), this.getExcludeAttachmentCondition()]),
+          )
+          .offset(offset ?? 0)
+      } else {
+        yqlBuilder.where(or(finalConditions)).offset(offset ?? 0)
+      }
+    }
+
+    if (app) {
+      yqlBuilder.filterByApp(app)
+    }
+
+    if (entity) {
+      yqlBuilder.filterByEntity(entity)
     }
 
     if (timestampField.length > 0 && timestampField[0]) {
