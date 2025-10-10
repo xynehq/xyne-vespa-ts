@@ -534,7 +534,7 @@ export const MailAttachmentSchema = z.object({
 })
 
 export const VespaMailAttachmentSchema = MailAttachmentSchema.extend({})
-
+export type EventStatusType = "confirmed" | "tentative" | "cancelled"
 const EventUser = z.object({
   email: z.string(),
   displayName: z.string(),
@@ -1540,7 +1540,6 @@ export const MailParticipantSchema = z.object({
   to: z.array(z.string()).optional(),
   cc: z.array(z.string()).optional(),
   bcc: z.array(z.string()).optional(),
-  subject: z.array(z.string()).optional(),
 })
 
 export type MailParticipant = z.infer<typeof MailParticipantSchema>
@@ -1621,6 +1620,10 @@ export type VespaQueryConfig = {
   isDriveConnected?: boolean
   isGmailConnected?: boolean
   isCalendarConnected?: boolean
+  orderBy: "asc" | "desc",
+  owner?: string | string[] | null,
+  attendees?: string[] | null,
+  eventStatus?: EventStatusType | null,
 }
 
 export interface GetItemsParams {

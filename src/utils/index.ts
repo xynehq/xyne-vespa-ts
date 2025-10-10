@@ -1,7 +1,7 @@
 import { int } from "zod"
 import type { ILogger, MailParticipant } from "../types"
 import { YqlCondition } from "../yql/types"
-import { contains, or } from "../yql"
+import { contains, matches, or } from "../yql"
 
 export function scale(val: number): number | null {
   if (!val) return null
@@ -17,152 +17,39 @@ export const escapeYqlValue = (value: string): string => {
   return value.replace(/'/g, "''")
 }
 
-// Gmail intent processing function
-export const processGmailIntent = (
+export const isValidEmail = (email: string) =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+export const getGmailParticipantsConditions = (
   mailParticipants: MailParticipant,
   logger: ILogger,
 ): YqlCondition[] => {
-  const mailParticipantsConditions: YqlCondition[] = []
-
-  // Helper function to validate email addresses
-  const isValidEmailAddress = (email: string): boolean => {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return emailRegex.test(email)
+  if (!mailParticipants || Object.keys(mailParticipants).length === 0) {
+    logger.info("No mail participants provided for Gmail filtering")
+    return []
   }
 
-  // VALIDATION: Process mailParticipants if there are actual email addresses OR subject fields
-  // DO NOT process mailParticipants for names without email addresses (unless subject is present)
-  const hasValidEmailAddresses =
-    mailParticipants &&
-    ((mailParticipants.from &&
-      mailParticipants.from.length > 0 &&
-      mailParticipants.from.some(isValidEmailAddress)) ||
-      (mailParticipants.to &&
-        mailParticipants.to.length > 0 &&
-        mailParticipants.to.some(isValidEmailAddress)) ||
-      (mailParticipants.cc &&
-        mailParticipants.cc.length > 0 &&
-        mailParticipants.cc.some(isValidEmailAddress)) ||
-      (mailParticipants.bcc &&
-        mailParticipants.bcc.length > 0 &&
-        mailParticipants.bcc.some(isValidEmailAddress)))
-
-  const hasSubjectFields =
-    mailParticipants &&
-    mailParticipants.subject &&
-    mailParticipants.subject.length > 0
-
-  // Process intent if we have valid email addresses OR subject fields
-  if (!hasValidEmailAddresses && !hasSubjectFields) {
-    logger.debug(
-      "Mail participants contain only names or no actionable identifiers - skipping Gmail participants filtering",
-      { mailParticipants },
-    )
-    return [] // Return empty array if no valid email addresses or subjects found
+  const participantFields: Record<keyof MailParticipant, string> = {
+    from: `"from"`,
+    to: "to",
+    cc: "cc",
+    bcc: "bcc",
   }
 
-  logger.debug(
-    "Mail participants contain valid email addresses or subjects - processing Gmail participants filtering",
-    { mailParticipants },
+  return (Object.keys(participantFields) as (keyof MailParticipant)[]).flatMap(
+    (field) => {
+      const queryField = participantFields[field]
+      const values = mailParticipants[field] || []
+      if (!values.length) return []
+
+      const conditions = values.map((email) => {
+        return isValidEmail(email)
+          ? contains(queryField, email)
+          : matches(queryField, email)
+      })
+
+      return or(conditions)
+    },
   )
-
-  // Process 'from' field
-  if (mailParticipants.from && mailParticipants.from.length > 0) {
-    if (mailParticipants.from.length === 1 && mailParticipants.from[0]) {
-      const fromCondition = contains(
-        `\"from\"`,
-        `${escapeYqlValue(mailParticipants.from[0])}`,
-      )
-      mailParticipantsConditions.push(fromCondition)
-    } else {
-      const fromConditions = mailParticipants.from.map((email) =>
-        contains(`\"from\"`, `${escapeYqlValue(email)}`),
-      )
-      mailParticipantsConditions.push(or(fromConditions))
-    }
-  }
-
-  // Process 'to' field
-  if (
-    mailParticipants.to &&
-    mailParticipants.to.length > 0 &&
-    mailParticipants.to[0]
-  ) {
-    if (mailParticipants.to.length === 1) {
-      const toCondition = contains(
-        `\"to\"`,
-        `${escapeYqlValue(mailParticipants.to[0])}`,
-      )
-      mailParticipantsConditions.push(toCondition)
-    } else {
-      const toConditions = mailParticipants.to.map((email) =>
-        contains(`\"to\"`, `${escapeYqlValue(email)}`),
-      )
-      mailParticipantsConditions.push(or(toConditions))
-    }
-  }
-
-  // Process 'cc' field
-  if (
-    mailParticipants.cc &&
-    mailParticipants.cc.length > 0 &&
-    mailParticipants.cc[0]
-  ) {
-    if (mailParticipants.cc.length === 1) {
-      const ccCondition = contains(
-        "cc",
-        `${escapeYqlValue(mailParticipants.cc[0])}`,
-      )
-      mailParticipantsConditions.push(ccCondition)
-    } else {
-      const ccConditions = mailParticipants.cc.map((email) =>
-        contains("cc", `${escapeYqlValue(email)}`),
-      )
-      mailParticipantsConditions.push(or(ccConditions))
-    }
-  }
-
-  // Process 'bcc' field
-  if (
-    mailParticipants.bcc &&
-    mailParticipants.bcc.length > 0 &&
-    mailParticipants.bcc[0]
-  ) {
-    if (mailParticipants.bcc.length === 1) {
-      const bccCondition = contains(
-        "bcc",
-        `${escapeYqlValue(mailParticipants.bcc[0])}`,
-      )
-      mailParticipantsConditions.push(bccCondition)
-    } else {
-      const bccConditions = mailParticipants.bcc.map((email) =>
-        contains("bcc", `${escapeYqlValue(email)}`),
-      )
-      mailParticipantsConditions.push(or(bccConditions))
-    }
-  }
-
-  // Process 'subject' field
-  if (
-    mailParticipants.subject &&
-    mailParticipants.subject.length > 0 &&
-    mailParticipants.subject[0]
-  ) {
-    if (mailParticipants.subject.length === 1) {
-      const subjectCondition = contains(
-        "subject",
-        `${escapeYqlValue(mailParticipants.subject[0])}`,
-      )
-      mailParticipantsConditions.push(subjectCondition)
-    } else {
-      const subjectConditions = mailParticipants.subject.map((subj) =>
-        contains("subject", `${escapeYqlValue(subj)}`),
-      )
-      mailParticipantsConditions.push(or(subjectConditions))
-    }
-  }
-
-  return mailParticipantsConditions
 }
 
 export const dateToUnixTimestamp = (

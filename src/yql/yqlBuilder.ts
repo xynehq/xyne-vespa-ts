@@ -378,8 +378,8 @@ export class YqlBuilder {
   /**
    * Add ORDER BY clause
    */
-  orderBy(field: string, direction: "asc" | "desc" = "asc"): this {
-    if (!field || typeof field !== "string" || !field.trim()) {
+  orderBy(field: string | string[], direction: "asc" | "desc" = "asc"): this {
+    if (!field) {
       throw new Error("Field name is required for ORDER BY")
     }
 
@@ -387,7 +387,29 @@ export class YqlBuilder {
       throw new Error("Direction must be 'asc' or 'desc'")
     }
 
-    this.orderByClause = `${field.trim()} ${direction}`
+    if (Array.isArray(field)) {
+      if (field.length === 0) {
+        throw new Error("At least one field must be specified for ORDER BY")
+      }
+
+      field.forEach((f, index) => {
+        if (!f || typeof f !== "string" || !f.trim()) {
+          throw new Error(`Invalid field name at index ${index} for ORDER BY`)
+        }
+      })
+
+      // Create order by clause with multiple fields
+      this.orderByClause = field
+        .map((f) => `${f.trim()} ${direction}`)
+        .join(" , ")
+    } else {
+      if (typeof field !== "string" || !field.trim()) {
+        throw new Error("Field name is required for ORDER BY")
+      }
+
+      this.orderByClause = `${field.trim()} ${direction}`
+    }
+
     return this
   }
 
