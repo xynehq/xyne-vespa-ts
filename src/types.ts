@@ -724,7 +724,7 @@ export const VespaChatMessageGetSchema = VespaChatMessageSchema.merge(
 )
 
 export const VespaChatAttachmentSchema = z.object({
-  docId: z.string(), 
+  docId: z.string(),
   messageId: z.string(), // Reference to chat message Id
   title: z.string(),
   filename: z.string(),
@@ -732,24 +732,26 @@ export const VespaChatAttachmentSchema = z.object({
   fileType: z.string(),
   size: z.number(), // file size in bytes
   url: z.string().optional(),
-  urlPrivate: z.string(), 
-  urlPrivateDownload: z.string(), 
+  urlPrivate: z.string(),
+  urlPrivateDownload: z.string(),
   thumbnailUrl: z.string().optional(),
   createdAt: z.number(),
-  teamId: z.string(), 
+  teamId: z.string(),
   userId: z.string(),
   chatRef: z.string(), // Reference to chat container (vespa reference)
   dimensions: z.array(z.number()).length(2).optional(), // [width, height] for images
-  duration: z.number().optional(), 
-  metadata: z.string().default("{}"), 
-  chunks: z.array(z.string()).default([]), 
+  duration: z.number().optional(),
+  metadata: z.string().default("{}"),
+  chunks: z.array(z.string()).default([]),
 })
 
-export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend({
-  sddocname: z.literal(chatAttachmentSchema),
-  matchfeatures: z.any().optional(),
-  rankfeatures: z.any().optional(),
-})
+export const VespaChatAttachmentSearchSchema = VespaChatAttachmentSchema.extend(
+  {
+    sddocname: z.literal(chatAttachmentSchema),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  },
+)
   .merge(defaultVespaFieldsSchema)
   .extend({
     chunks_summary: z.array(z.union([z.string(), scoredChunk])).optional(),
@@ -1179,8 +1181,12 @@ export type VespaChatUser = z.infer<typeof VespaChatUserSchema>
 export type VespaChatMessage = z.infer<typeof VespaChatMessageSchema>
 export type VespaChatAttachment = z.infer<typeof VespaChatAttachmentSchema>
 export type VespaChatUserSearch = z.infer<typeof VespaChatUserSearchSchema>
-export type VespaChatAttachmentSearch = z.infer<typeof VespaChatAttachmentSearchSchema>
-export type VespaChatAttachmentGet = z.infer<typeof VespaChatAttachmentGetSchema>
+export type VespaChatAttachmentSearch = z.infer<
+  typeof VespaChatAttachmentSearchSchema
+>
+export type VespaChatAttachmentGet = z.infer<
+  typeof VespaChatAttachmentGetSchema
+>
 export type VespaAutocompleteChatContainer = z.infer<
   typeof VespaAutocompleteChatContainerSchema
 >
@@ -1620,10 +1626,10 @@ export type VespaQueryConfig = {
   isDriveConnected?: boolean
   isGmailConnected?: boolean
   isCalendarConnected?: boolean
-  orderBy: "asc" | "desc",
-  owner?: string | string[] | null,
-  attendees?: string[] | null,
-  eventStatus?: EventStatusType | null,
+  orderBy: "asc" | "desc"
+  owner?: string | string[] | null
+  attendees?: string[] | null
+  eventStatus?: EventStatusType | null
 }
 
 export interface GetItemsParams {
@@ -1681,4 +1687,37 @@ export interface VespaDependencies {
   sourceSchemas: VespaSchema[]
   vespaEndpoint: string
   textChunker?: ITextChunker
+}
+
+export enum GoogleApps {
+  Gmail = Apps.Gmail,
+  Drive = Apps.GoogleDrive,
+  Calendar = Apps.GoogleCalendar,
+  Contacts = "Contacts",
+}
+
+export interface SearchGoogleAppsParams {
+  app: GoogleApps
+  email: string
+  query?: string
+  limit?: number
+  offset?: number
+  sortBy?: "asc" | "desc"
+  labels?: string[]
+  timeRange?: {
+    startTime: number
+    endTime: number
+  }
+  isAttachmentRequired?: boolean
+  participants?: MailParticipant
+  owner?: string
+  excludeDocIds?: string[]
+  driveEntity?: DriveEntity | DriveEntity[]
+  attendees?: string[]
+  eventStatus?: EventStatusType
+  processedCollectionSelections?: CollectionVespaIds
+  channelIds?: string[]
+  docIds?: string[]
+  alpha?: number
+  rankProfile?: SearchModes
 }
