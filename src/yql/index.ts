@@ -24,11 +24,6 @@ import {
 const and = (conditions: YqlCondition[]): And => new And(conditions)
 const or = (conditions: YqlCondition[]): Or => new Or(conditions)
 
-const andWithoutPermissions = (conditions: YqlCondition[]): And =>
-  new And(conditions, { requirePermissions: false })
-const orWithoutPermissions = (conditions: YqlCondition[]): Or =>
-  new Or(conditions, { requirePermissions: false })
-
 const andWithPermissions = (conditions: YqlCondition[]): And =>
   new And(conditions, { requirePermissions: true })
 const orWithPermissions = (conditions: YqlCondition[]): Or =>
@@ -85,8 +80,6 @@ const sameElement = (key: string, value: string): SameElement =>
 export {
   and,
   or,
-  andWithoutPermissions,
-  orWithoutPermissions,
   andWithPermissions,
   orWithPermissions,
   not,
