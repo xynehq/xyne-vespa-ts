@@ -29,7 +29,14 @@ import {
   orWithPermissions,
 } from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
-import { Apps, Entity, SearchModes, userSchema, VespaSchema } from "../types"
+import {
+  Apps,
+  Entity,
+  KbItemsSchema,
+  SearchModes,
+  userSchema,
+  VespaSchema,
+} from "../types"
 import { YqlProfile } from "./types"
 
 export class YqlBuilder {
@@ -41,6 +48,10 @@ export class YqlBuilder {
   private offsetClause?: number
   private timeoutClause?: string
   private groupByClause?: string
+  private appCondition?: YqlCondition
+  private entityCondition?: YqlCondition
+  private excludeDocIdCondtion?: YqlCondition
+  private includeDocIdCondtion?: YqlCondition
   private orderByClause?: string
 
   private permissionWrapper?: PermissionWrapper
@@ -255,10 +266,10 @@ export class YqlBuilder {
     const apps = Array.isArray(app) ? app : [app]
 
     if (apps.length === 1) {
-      return this.where(this.createAnd([contains("app", apps[0]!)]))
+      this.appCondition = this.createAnd([contains("app", apps[0]!)])
     } else if (apps.length > 1) {
       const conditions = apps.map((a) => contains("app", a))
-      return this.where(this.createOr(conditions).parenthesize())
+      this.appCondition = this.createOr(conditions)
     }
 
     return this
@@ -271,10 +282,10 @@ export class YqlBuilder {
     const entities = Array.isArray(entity) ? entity : [entity]
 
     if (entities.length === 1) {
-      return this.where(this.createAnd([contains("entity", entities[0]!)]))
+      this.entityCondition = this.createAnd([contains("entity", entities[0]!)])
     } else if (entities.length > 1) {
       const conditions = entities.map((e) => contains("entity", e))
-      return this.where(this.createOr(conditions).parenthesize())
+      this.entityCondition = this.createOr(conditions)
     }
 
     return this
@@ -286,7 +297,7 @@ export class YqlBuilder {
   excludeDocIds(docIds: string[]): this {
     const exclusion = exclude(docIds)
     if (!exclusion.isEmpty()) {
-      return this.where(exclusion)
+      this.excludeDocIdCondtion = exclusion
     }
     return this
   }
@@ -297,43 +308,8 @@ export class YqlBuilder {
   includeDocIds(docIds: string[]): this {
     const inclusion = include("docId", docIds)
     if (!inclusion.isEmpty()) {
-      return this.where(inclusion)
+      this.includeDocIdCondtion = inclusion
     }
-    return this
-  }
-
-  /**
-   * Add inclusion condition for any field
-   */
-  includeValues(field: FieldName, values: string[]): this {
-    const inclusion = include(field, values)
-    if (!inclusion.isEmpty()) {
-      return this.where(inclusion)
-    }
-    return this
-  }
-
-  /**
-   * Add mail label exclusion (Gmail specific)
-   */
-  excludeMailLabels(labels: string[]): this {
-    if (!labels || labels.length === 0) {
-      return this
-    }
-
-    const labelConditions = labels
-      .filter((label) => label && label.trim())
-      .map((label) => contains("labels", label.trim()))
-
-    if (labelConditions.length > 0) {
-      const combinedLabels =
-        labelConditions.length === 1
-          ? labelConditions[0]!
-          : this.createOr(labelConditions).parenthesize()
-
-      return this.where(combinedLabels.not())
-    }
-
     return this
   }
 
@@ -423,9 +399,11 @@ export class YqlBuilder {
 
     let yql = `${this.selectClause} ${this.sourcesClause}`
 
-    // Build WHERE clause with intelligent permission management
+    // Build WHERE clause with permission management
     if (
       this.whereConditions.length > 0 ||
+      this.appCondition ||
+      this.entityCondition ||
       (this.withPermissions && this.userEmail)
     ) {
       const whereClause = this.buildWhereClause()
@@ -433,7 +411,6 @@ export class YqlBuilder {
         yql += ` where (${whereClause})`
       }
     }
-
     // Add other clauses
     if (this.limitClause !== undefined) {
       yql += ` limit ${this.limitClause}`
@@ -468,37 +445,67 @@ export class YqlBuilder {
    * Build WHERE clause with intelligent permission management
    */
   private buildWhereClause(): string | null {
-    // If we have permissions enabled but no where conditions, add just permissions
-    if (
-      this.whereConditions.length === 0 &&
-      this.withPermissions &&
-      this.userEmail
-    ) {
+    const allConditions: YqlCondition[] = []
+
+    if (this.whereConditions.length > 0) {
+      let combinedConditions: YqlCondition
+      // Don't add permissions here - let recursivelyApplyPermissions handle it
+      if (this.whereConditions.length === 1) {
+        combinedConditions = this.whereConditions[0]!
+      } else {
+        combinedConditions = Or.withoutPermissions(this.whereConditions)
+      }
+      allConditions.push(combinedConditions)
+    }
+
+    // App filter
+    if (this.appCondition) {
+      allConditions.push(this.appCondition)
+    }
+
+    // Entity filter
+    if (this.entityCondition) {
+      allConditions.push(this.entityCondition)
+    }
+
+    // Exclude doc IDs filter
+    if (this.excludeDocIdCondtion) {
+      allConditions.push(this.excludeDocIdCondtion)
+    }
+    // Include doc IDs filter
+    if (this.includeDocIdCondtion) {
+      allConditions.push(this.includeDocIdCondtion)
+    }
+
+    // If we have permissions enabled but no conditions, add just permissions
+    if (allConditions.length === 0 && this.withPermissions && this.userEmail) {
       const permissionCondition = this.buildPermissionCondition()
       return permissionCondition ? permissionCondition.toString() : null
     }
 
-    if (this.whereConditions.length === 0) {
+    if (allConditions.length === 0) {
       return null
     }
 
-    let combinedConditions: YqlCondition
-
-    // Don't add permissions here - let recursivelyApplyPermissions handle it
-    if (this.whereConditions.length === 1) {
-      combinedConditions = this.whereConditions[0]!
+    // Combine all conditions with AND
+    let finalCondition: YqlCondition
+    if (allConditions.length === 1) {
+      finalCondition = allConditions[0]!
     } else {
-      combinedConditions = Or.withoutPermissions(this.whereConditions)
+      finalCondition = this.createAnd(allConditions)
     }
 
+    const isOnlyKbSource =
+      this.currentSources.length === 1 &&
+      this.currentSources[0] === KbItemsSchema
     // Apply permissions only at the top level if permissions are enabled
-    if (this.withPermissions && this.userEmail) {
-      const processedCondition =
-        this.applyTopLevelPermissions(combinedConditions)
+    // we also we need to skip permission checks for kb_items
+    if (this.withPermissions && this.userEmail && !isOnlyKbSource) {
+      const processedCondition = this.applyTopLevelPermissions(finalCondition)
       return processedCondition.toString()
     }
 
-    return this.parenthesisConditions(combinedConditions).toString()
+    return this.parenthesisConditions(finalCondition).toString()
   }
 
   private parenthesisConditions(condition: YqlCondition): YqlCondition {
