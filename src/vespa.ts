@@ -2087,36 +2087,14 @@ export class VespaService {
     // Timestamp conditions
     if (timestampRange) {
       const timeConditions: YqlCondition[] = []
-      const fieldForRange = timestampField // Use default field unless orderBy overrides
-
-      if (timestampRange.from) {
-        const fromTimestamp = new Date(timestampRange.from).getTime()
-        if (fieldForRange.length > 1) {
-          const fromConditions = fieldForRange.map((field) =>
-            greaterThanOrEqual(field, fromTimestamp),
-          )
-          timeConditions.push(or(fromConditions))
-        } else {
-          timeConditions.push(
-            greaterThanOrEqual(fieldForRange[0]!, fromTimestamp),
-          )
-        }
-      }
-
-      if (timestampRange.to) {
-        const toTimestamp = new Date(timestampRange.to).getTime()
-        if (fieldForRange.length > 1) {
-          const toConditions = fieldForRange.map((field) =>
-            lessThanOrEqual(field, toTimestamp),
-          )
-          timeConditions.push(or(toConditions))
-        } else {
-          timeConditions.push(lessThanOrEqual(fieldForRange[0]!, toTimestamp))
-        }
-      }
-
+      const fieldForRange = timestampField
+      timeConditions.push(
+        or(
+          fieldForRange.map((field) => timestamp(field, field, timestampRange)),
+        ),
+      )
       if (timeConditions.length > 0) {
-        conditions.push(and(timeConditions))
+        conditions.push(...timeConditions)
       }
     }
 
@@ -2206,7 +2184,7 @@ export class VespaService {
       const mainConditions: YqlCondition[] = []
 
       if (conditions.length > 0 && appEntityConditions.length > 0) {
-        mainConditions.push(and([or(conditions), or(appEntityConditions)]))
+        mainConditions.push(or(conditions), or(appEntityConditions))
       } else if (conditions.length > 0) {
         mainConditions.push(or(conditions))
       } else if (appEntityConditions.length > 0) {
