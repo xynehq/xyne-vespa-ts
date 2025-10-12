@@ -2958,10 +2958,12 @@ export class VespaService {
       }
     }
 
-    const yqlBuilder = YqlBuilder.create({ email })
-      .from(sources)
-      .where(and(conditions))
+    const yqlBuilder = YqlBuilder.create({ email }).from(sources).limit(limit)
     // .orderBy(timestampField, sortBy)
+
+    if (conditions.length > 0) {
+      yqlBuilder.where(and(conditions))
+    }
 
     if (excludeDocIds && excludeDocIds.length > 0) {
       yqlBuilder.excludeDocIds(excludeDocIds)

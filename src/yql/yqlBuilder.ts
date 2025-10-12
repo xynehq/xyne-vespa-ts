@@ -404,6 +404,8 @@ export class YqlBuilder {
       this.whereConditions.length > 0 ||
       this.appCondition ||
       this.entityCondition ||
+      this.excludeDocIdCondtion ||
+      this.includeDocIdCondtion ||
       (this.withPermissions && this.userEmail)
     ) {
       const whereClause = this.buildWhereClause()
@@ -453,7 +455,7 @@ export class YqlBuilder {
       if (this.whereConditions.length === 1) {
         combinedConditions = this.whereConditions[0]!
       } else {
-        combinedConditions = Or.withoutPermissions(this.whereConditions)
+        combinedConditions = or(this.whereConditions)
       }
       allConditions.push(combinedConditions)
     }
@@ -490,7 +492,7 @@ export class YqlBuilder {
     // Combine all conditions with AND
     let finalCondition: YqlCondition
     if (allConditions.length === 1) {
-      finalCondition = allConditions[0]!
+      finalCondition = this.createAnd([allConditions[0]!])
     } else {
       finalCondition = this.createAnd(allConditions)
     }
