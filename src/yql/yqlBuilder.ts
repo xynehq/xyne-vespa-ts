@@ -23,8 +23,6 @@ import {
   include,
   and,
   contains,
-  andWithoutPermissions,
-  orWithoutPermissions,
   andWithPermissions,
   orWithPermissions,
 } from "."
@@ -105,7 +103,7 @@ export class YqlBuilder {
     if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
       return this.createPermissionAwareAnd(conditions)
     }
-    return andWithoutPermissions(conditions)
+    return And.withoutPermissions(conditions)
   }
 
   private createPermissionAwareAnd(conditions: YqlCondition[]): And {
@@ -135,7 +133,7 @@ export class YqlBuilder {
     if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
       return this.createPermissionAwareOr(conditions)
     }
-    return orWithoutPermissions(conditions)
+    return Or.withoutPermissions(conditions)
   }
 
   /**

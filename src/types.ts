@@ -1590,7 +1590,7 @@ export enum SearchModes {
   Random = "default_random",
   GlobalSorted = "global_sorted",
   BoostTitle = "title_boosted_hybrid",
-  attachmentRank = "attachmentRank",
+  AttachmentRank = "attachmentRank",
 }
 
 export type CollectionVespaIds = {
@@ -1622,7 +1622,7 @@ export type VespaQueryConfig = {
   }> // Updated to support key-value pairs instead of prefixed strings
   processedCollectionSelections?: CollectionVespaIds
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
-  selectedItem?: {}
+  selectedItem?: Partial<Record<Apps, string[]>>
   isSlackConnected?: boolean
   isDriveConnected?: boolean
   isGmailConnected?: boolean
@@ -1645,6 +1645,9 @@ export interface GetItemsParams {
   asc: boolean
   mailParticipants?: MailParticipant | null
   channelIds?: string[]
+  driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
+  processedCollectionSelections?: CollectionVespaIds
+  selectedItem?: Partial<Record<Apps, string[]>>
 }
 
 export interface GetThreadItemsParams {
