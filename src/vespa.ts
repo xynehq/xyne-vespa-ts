@@ -1,5 +1,6 @@
 import {
   Apps,
+  GoogleApps,
   eventSchema,
   MailEntity,
   fileSchema,
@@ -14,7 +15,6 @@ import {
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
-  type Intent,
   type Span,
   SlackEntity,
   chatContainerSchema,
@@ -38,6 +38,9 @@ import type {
   VespaQueryConfig,
   GetItemsParams,
   GetThreadItemsParams,
+  MailParticipant,
+  EventStatusType,
+  SearchGoogleAppsParams,
 } from "./types"
 import { SearchModes } from "./types"
 import {
@@ -45,7 +48,8 @@ import {
   escapeYqlValue,
   formatYqlToReadable,
   getErrorMessage,
-  processGmailIntent,
+  getGmailParticipantsConditions,
+  isValidEmail,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
 import { And, Or, FuzzyContains } from "./yql/conditions"
@@ -74,6 +78,7 @@ import pLimit from "p-limit"
 import type { ILogger, VespaConfig, VespaDependencies } from "./types"
 import { YqlCondition } from "./yql/types"
 import { off } from "process"
+import { is } from "zod/v4/locales"
 
 type YqlProfile = {
   profile: SearchModes
@@ -323,8 +328,12 @@ export class VespaService {
     excludedIds?: string[],
     notInMailLabels?: string[],
     excludedApps?: Apps[],
-    intent?: Intent | null,
+    mailParticipants?: MailParticipant | null,
     userEmail?: string,
+    orderBy: "asc" | "desc" = "desc",
+    owner?: string | string[] | null,
+    attendees?: string[] | null,
+    eventStatus?: EventStatusType | null,
   ): YqlProfile => {
     try {
       const availableSources = this.getAvailableSources(excludedApps)
@@ -337,7 +346,10 @@ export class VespaService {
         entity,
         timestampRange,
         notInMailLabels,
-        intent,
+        mailParticipants,
+        owner,
+        attendees,
+        eventStatus,
       )
 
       const yqlBuilder = YqlBuilder.create({
@@ -418,18 +430,27 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     notInMailLabels?: string[],
-    intent?: Intent | null,
+    mailParticipants?: MailParticipant | null,
+    owner?: string | string[] | null,
+    attendees?: string[] | null,
+    eventStatus?: EventStatusType | null,
   ) {
     const appConditions = []
 
     if (includedApps.length === 0) {
-      return [
-        this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
-      ]
+      return [this.buildDefaultCondition(hits, app, entity, timestampRange)]
     }
     // default condition to cover all other apps
     appConditions.push(
-      this.buildDefaultCondition(hits, app, entity, timestampRange, intent),
+      this.buildDefaultCondition(
+        hits,
+        app,
+        entity,
+        timestampRange,
+        owner,
+        attendees,
+        eventStatus,
+      ),
     )
 
     if (includedApps.includes(Apps.GoogleWorkspace)) {
@@ -445,7 +466,7 @@ export class VespaService {
           entity,
           timestampRange,
           notInMailLabels,
-          intent,
+          mailParticipants,
         ),
       )
     }
@@ -562,7 +583,7 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     notInMailLabels?: string[],
-    intent?: Intent | null,
+    mailParticipants?: MailParticipant | null,
   ) {
     const conditions = []
 
@@ -592,10 +613,13 @@ export class VespaService {
       }
     }
 
-    if (intent) {
-      const intentCondition = this.buildIntentConditionFromIntent(intent)
-      if (intentCondition) {
-        conditions.push(intentCondition)
+    if (mailParticipants && Object.keys(mailParticipants).length > 0) {
+      const mailParticipantsCondition = getGmailParticipantsConditions(
+        mailParticipants,
+        this.logger,
+      )
+      if (mailParticipantsCondition) {
+        conditions.push(and(mailParticipantsCondition))
       }
     }
 
@@ -634,7 +658,6 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null,
   ) {
     const conditions = []
 
@@ -683,7 +706,9 @@ export class VespaService {
     app: Apps | Apps[] | null,
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
-    intent?: Intent | null,
+    owner?: string | string[] | null,
+    attendees?: string[] | null,
+    eventStatus?: EventStatusType | null,
   ) {
     const conditions = []
 
@@ -705,45 +730,35 @@ export class VespaService {
       )
     }
 
+    if (app && app === Apps.GoogleDrive) {
+      if (owner && typeof owner === "string") {
+        conditions.push(
+          isValidEmail(owner)
+            ? contains("owner", owner)
+            : matches("owner", owner),
+        )
+      } else if (owner && Array.isArray(owner) && owner.length > 0) {
+        const ownerConditions = owner.map((o) =>
+          isValidEmail(o) ? contains("owners", o) : matches("owners", o),
+        )
+        conditions.push(or(ownerConditions))
+      }
+    }
+
+    if (app && app === Apps.GoogleCalendar) {
+      if (attendees && Array.isArray(attendees) && attendees.length > 0) {
+        const attendeeConditions = attendees.map((a) =>
+          isValidEmail(a) ? contains("attendees", a) : matches("attendees", a),
+        )
+        conditions.push(or(attendeeConditions))
+      }
+      if (eventStatus) {
+        conditions.push(contains("status", eventStatus))
+      }
+    }
+
     return and(conditions)
   }
-
-  private buildIntentConditionFromIntent(intent: Intent) {
-    const intentConditions = []
-
-    if (intent.from && intent.from.length > 0) {
-      const fromConditions = intent.from.map((from) =>
-        contains(`\"from\"`, from),
-      )
-      intentConditions.push(
-        fromConditions.length === 1 ? fromConditions[0]! : or(fromConditions),
-      )
-    }
-
-    if (intent.to && intent.to.length > 0) {
-      const toConditions = intent.to.map((to) => contains("to", to))
-      intentConditions.push(
-        toConditions.length === 1 ? toConditions[0]! : or(toConditions),
-      )
-    }
-
-    if (intent.cc && intent.cc.length > 0) {
-      const ccConditions = intent.cc.map((cc) => contains("cc", cc))
-      intentConditions.push(
-        ccConditions.length === 1 ? ccConditions[0]! : or(ccConditions),
-      )
-    }
-
-    if (intent.bcc && intent.bcc.length > 0) {
-      const bccConditions = intent.bcc.map((bcc) => contains("bcc", bcc))
-      intentConditions.push(
-        bccConditions.length === 1 ? bccConditions[0]! : or(bccConditions),
-      )
-    }
-
-    return intentConditions.length > 0 ? and(intentConditions) : null
-  }
-
   // knowledge base collections conditions will not have permissions checks
   buildCollectionConditions = (
     selections: CollectionVespaIds,
@@ -785,7 +800,7 @@ export class VespaService {
     notInMailLabels?: string[],
     allowedApps: Apps[] | null = null,
     dataSourceIds: string[] = [],
-    intent: Intent | null = null,
+    mailParticipants: MailParticipant | null = null,
     channelIds: string[] = [],
     processedCollectionSelections: CollectionVespaIds = {},
     driveIds: string[] = [],
@@ -825,7 +840,7 @@ export class VespaService {
               entity,
               timestampRange,
               notInMailLabels,
-              intent,
+              mailParticipants,
             ),
           )
           sources.add(mailSchema)
@@ -1334,11 +1349,15 @@ export class VespaService {
       maxHits = 400,
       recencyDecayRate = 0.02,
       isIntentSearch = false,
-      intent = {},
+      mailParticipants = {},
       isSlackConnected,
       isCalendarConnected,
       isDriveConnected,
       isGmailConnected,
+      orderBy = "desc",
+      owner = null,
+      attendees = null,
+      eventStatus = null,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Filter out attachment app and entities if present
@@ -1359,11 +1378,15 @@ export class VespaService {
       maxHits,
       recencyDecayRate,
       isIntentSearch,
-      intent,
+      mailParticipants,
       isSlackConnected,
       isCalendarConnected,
       isDriveConnected,
       isGmailConnected,
+      orderBy,
+      owner,
+      attendees,
+      eventStatus,
     })
   }
 
@@ -1385,13 +1408,18 @@ export class VespaService {
       maxHits = 400,
       recencyDecayRate = 0.02,
       isIntentSearch = false,
-      intent = {},
+      mailParticipants = {},
       isSlackConnected = false,
       isCalendarConnected = false,
       isDriveConnected = false,
       isGmailConnected = false,
+      orderBy = "desc",
+      owner = null,
+      attendees = null,
+      eventStatus = null,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
+    console.log(mailParticipants, "mailParticipants in searchVespa")
     // Determine the timestamp cutoff based on lastUpdated
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
@@ -1429,10 +1457,14 @@ export class VespaService {
       excludedIds,
       notInMailLabels,
       excludedApps,
-      intent,
+      mailParticipants,
       email,
+      orderBy,
+      owner,
+      attendees,
+      eventStatus,
     )
-    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1598,7 +1630,7 @@ export class VespaService {
       maxHits = 400,
       recencyDecayRate = 0.02,
       dataSourceIds = [], // Ensure dataSourceIds is destructured here
-      intent = null,
+      mailParticipants = null,
       channelIds = [],
       driveIds = [], // docIds
       selectedItem,
@@ -1624,7 +1656,7 @@ export class VespaService {
       notInMailLabels,
       Apps,
       dataSourceIds, // Pass dataSourceIds here
-      intent,
+      mailParticipants,
       channelIds,
       processedCollectionSelections, // Pass processedCollectionSelections
       driveIds,
@@ -2021,7 +2053,7 @@ export class VespaService {
       email,
       excludedIds, // Added excludedIds here
       asc,
-      intent,
+      mailParticipants,
       channelIds,
       processedCollectionSelections,
       selectedItem,
@@ -2098,10 +2130,11 @@ export class VespaService {
       }
     }
 
+    const mailParticipantConditions = []
     // Intent-based conditions - modular approach for different apps
-    if (intent) {
-      this.logger.debug("Processing intent-based filtering", {
-        intent,
+    if (mailParticipants) {
+      this.logger.debug("Processing mailParticipants-based filtering", {
+        mailParticipants,
         app,
         entity,
         schema,
@@ -2113,16 +2146,19 @@ export class VespaService {
         entity === MailEntity.Email &&
         schema === mailSchema
       ) {
-        const gmailIntentConditions = processGmailIntent(intent, this.logger)
+        const gmailIntentConditions = getGmailParticipantsConditions(
+          mailParticipants,
+          this.logger,
+        )
         if (gmailIntentConditions.length > 0) {
-          conditions.push(...gmailIntentConditions)
+          mailParticipantConditions.push(...gmailIntentConditions)
           this.logger.debug(
             `Added Gmail intent conditions: ${gmailIntentConditions.join(" and ")}`,
           )
         } else {
           this.logger.debug(
-            "Gmail intent provided but contains only names/non-specific identifiers - skipping intent filtering",
-            { intent },
+            "Gmail participants provided but contains only names/non-specific identifiers - skipping participant filtering",
+            { mailParticipants },
           )
         }
       }
@@ -2218,7 +2254,7 @@ export class VespaService {
       entity,
       limit,
       offset,
-      intentProvided: !!intent,
+      mailParticipantsProvided: !!mailParticipants,
       conditions: conditions.length > 0 ? conditions : "none",
     })
 
@@ -2845,6 +2881,184 @@ export class VespaService {
         message: `searchCollectionRAG failed for query: "${query.trim()}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
       })
       this.logger.error(searchError, "Error in searchCollectionRAG function")
+      throw searchError
+    }
+  }
+
+  searchGoogleApps = async ({
+    app,
+    email,
+    query,
+    limit = this.config.page,
+    offset = 0,
+    sortBy = "desc",
+    labels,
+    timeRange,
+    isAttachmentRequired,
+    participants,
+    owner,
+    attendees,
+    eventStatus,
+    excludeDocIds,
+    docIds,
+    driveEntity,
+    alpha = 0.5,
+    rankProfile = SearchModes.NativeRank,
+  }: SearchGoogleAppsParams): Promise<VespaSearchResponse> => {
+    const appToSourceMap: Record<GoogleApps, VespaSchema | VespaSchema[]> = {
+      [GoogleApps.Gmail]: isAttachmentRequired
+        ? [mailSchema, mailAttachmentSchema]
+        : [mailSchema],
+      [GoogleApps.Drive]: fileSchema,
+      [GoogleApps.Calendar]: eventSchema,
+      [GoogleApps.Contacts]: userSchema,
+    }
+
+    const conditions: YqlCondition[] = []
+    const sources = appToSourceMap[app]
+
+    // don't need hybrid search for contacts
+    if (query && query.trim().length > 0 && app !== GoogleApps.Contacts) {
+      conditions.push(
+        or([
+          userInput("@query", limit),
+          nearestNeighbor("chunk_embeddings", "e", limit),
+        ]),
+      )
+    }
+    const timestampField =
+      app === GoogleApps.Gmail
+        ? "timestamp"
+        : app === GoogleApps.Drive
+          ? "updatedAt"
+          : app === GoogleApps.Calendar
+            ? "startTime"
+            : "updatedAt"
+    if (timeRange && (timeRange.startTime || timeRange.endTime)) {
+      conditions.push(
+        timestamp(timestampField, timestampField, {
+          from: timeRange.startTime ?? null,
+          to: timeRange.endTime ?? null,
+        }),
+      )
+    }
+
+    // Gmail-specific
+    if (app === GoogleApps.Gmail) {
+      if (labels && labels.length > 0) {
+        const labelConditions = labels.map((label) =>
+          contains("labels", label.trim()),
+        )
+        conditions.push(or(labelConditions))
+      }
+      if (participants) {
+        const participantConditions = getGmailParticipantsConditions(
+          participants,
+          this.logger,
+        )
+        if (participantConditions.length > 0) {
+          conditions.push(and(participantConditions))
+        }
+      }
+    }
+
+    // Drive-specific
+    if (app === GoogleApps.Drive) {
+      if (owner) {
+        conditions.push(
+          isValidEmail(owner)
+            ? contains("owner", owner)
+            : matches("owner", owner),
+        )
+      }
+      if (driveEntity) {
+        if (Array.isArray(driveEntity)) {
+          const entityConditions = driveEntity.map((entity) =>
+            contains("entity", entity),
+          )
+          conditions.push(or(entityConditions))
+        } else {
+          conditions.push(contains("entity", driveEntity))
+        }
+      }
+    }
+
+    // Calendar-specific
+    if (app === GoogleApps.Calendar) {
+      if (attendees && attendees.length > 0) {
+        const attendeeConditions = attendees.map((attendee) =>
+          isValidEmail(attendee)
+            ? contains("attendees", attendee)
+            : matches("attendees", attendee),
+        )
+        conditions.push(or(attendeeConditions))
+      }
+
+      if (eventStatus) {
+        conditions.push(contains("status", eventStatus))
+      }
+    }
+
+    // Contacts-specific
+    if (app === GoogleApps.Contacts) {
+      if (query && query.trim().length > 0) {
+        conditions.push(
+          isValidEmail(query)
+            ? contains("email", query)
+            : or([matches("email", query), matches("name", query)]),
+        )
+      }
+    }
+
+    const yqlBuilder = YqlBuilder.create({ email }).from(sources).limit(limit)
+    // .orderBy(timestampField, sortBy)
+
+    if (conditions.length > 0) {
+      yqlBuilder.where(and(conditions))
+    }
+
+    if (excludeDocIds && excludeDocIds.length > 0) {
+      yqlBuilder.excludeDocIds(excludeDocIds)
+    }
+    if (docIds && docIds.length > 0) {
+      yqlBuilder.includeDocIds(docIds)
+    }
+
+    const yql = yqlBuilder.build()
+    console.log(
+      "Vespa YQL Query in searchGoogleApps: ",
+      formatYqlToReadable(yql),
+    )
+    const searchPayload = {
+      yql: yql,
+      ...(query
+        ? {
+            query: query.trim(),
+            "input.query(e)": "embed(@query)",
+          }
+        : {}),
+      "ranking.profile": rankProfile,
+      "input.query(alpha)": alpha,
+      hits: limit,
+      offset,
+      timeout: "30s",
+    }
+
+    try {
+      const response =
+        await this.vespa.search<VespaSearchResponse>(searchPayload)
+      this.logger.info(
+        `[searchGoogleApps] Found ${response.root?.children?.length || 0} documents`,
+      )
+
+      return response
+    } catch (error) {
+      const searchError = new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: Array.isArray(sources) ? sources.join(", ") : sources,
+        message: `searchGoogleApps failed for app: ${app}`,
+      })
+      this.logger.error(searchError, "Error in searchGoogleApps function")
       throw searchError
     }
   }

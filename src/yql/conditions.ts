@@ -63,10 +63,6 @@ export class VespaField extends BaseCondition {
     if (!field || typeof field !== "string") {
       throw new Error("Field name must be a non-empty string")
     }
-    // Basic validation for field names
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field)) {
-      throw new Error(`Invalid field name: ${field}`)
-    }
   }
 
   toString(): string {

@@ -1275,7 +1275,7 @@ class VespaClient {
 
   async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
     const yql = YqlBuilder.create()
-      .select("docId")
+      .select()
       .from(chatUserSchema)
       .where(contains("email", email))
       .build()

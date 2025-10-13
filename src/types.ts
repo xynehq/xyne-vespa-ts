@@ -534,7 +534,7 @@ export const MailAttachmentSchema = z.object({
 })
 
 export const VespaMailAttachmentSchema = MailAttachmentSchema.extend({})
-
+export type EventStatusType = "confirmed" | "tentative" | "cancelled"
 const EventUser = z.object({
   email: z.string(),
   displayName: z.string(),
@@ -1541,15 +1541,14 @@ export type FileResponse = z.infer<typeof FileResponseSchema>
 
 export type SearchResponse = z.infer<typeof SearchResponseSchema>
 
-export const IntentSchema = z.object({
+export const MailParticipantSchema = z.object({
   from: z.array(z.string()).optional(),
   to: z.array(z.string()).optional(),
   cc: z.array(z.string()).optional(),
   bcc: z.array(z.string()).optional(),
-  subject: z.array(z.string()).optional(),
 })
 
-export type Intent = z.infer<typeof IntentSchema>
+export type MailParticipant = z.infer<typeof MailParticipantSchema>
 
 interface SpanAttributes {
   [key: string]: string | number | boolean | null
@@ -1614,7 +1613,7 @@ export type VespaQueryConfig = {
   recencyDecayRate: number
   dataSourceIds?: string[]
   isIntentSearch?: boolean
-  intent?: Intent | null
+  mailParticipants?: MailParticipant | null
   channelIds?: string[]
   collectionSelections?: Array<{
     collectionIds?: string[]
@@ -1628,6 +1627,10 @@ export type VespaQueryConfig = {
   isDriveConnected?: boolean
   isGmailConnected?: boolean
   isCalendarConnected?: boolean
+  orderBy: "asc" | "desc"
+  owner?: string | string[] | null
+  attendees?: string[] | null
+  eventStatus?: EventStatusType | null
 }
 
 export interface GetItemsParams {
@@ -1640,7 +1643,7 @@ export interface GetItemsParams {
   email: string
   excludedIds?: string[]
   asc: boolean
-  intent?: Intent | null
+  mailParticipants?: MailParticipant | null
   channelIds?: string[]
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   processedCollectionSelections?: CollectionVespaIds
@@ -1688,4 +1691,37 @@ export interface VespaDependencies {
   sourceSchemas: VespaSchema[]
   vespaEndpoint: string
   textChunker?: ITextChunker
+}
+
+export enum GoogleApps {
+  Gmail = Apps.Gmail,
+  Drive = Apps.GoogleDrive,
+  Calendar = Apps.GoogleCalendar,
+  Contacts = "Contacts",
+}
+
+export interface SearchGoogleAppsParams {
+  app: GoogleApps
+  email: string
+  query?: string
+  limit?: number
+  offset?: number
+  sortBy?: "asc" | "desc"
+  labels?: string[]
+  timeRange?: {
+    startTime: number
+    endTime: number
+  }
+  isAttachmentRequired?: boolean
+  participants?: MailParticipant
+  owner?: string
+  excludeDocIds?: string[]
+  driveEntity?: DriveEntity | DriveEntity[]
+  attendees?: string[]
+  eventStatus?: EventStatusType
+  processedCollectionSelections?: CollectionVespaIds
+  channelIds?: string[]
+  docIds?: string[]
+  alpha?: number
+  rankProfile?: SearchModes
 }
