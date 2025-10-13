@@ -6,7 +6,6 @@ import { And, Or } from "./yql/conditions"
 import {
   Apps,
   SearchModes,
-  Intent,
   DriveEntity,
   MailEntity,
   VespaSchema,
