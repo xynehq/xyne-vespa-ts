@@ -701,6 +701,37 @@ export class VespaService {
     return and(conditions)
   }
 
+  // Enhanced Slack condition that supports additional filters like senderId
+  private buildEnhancedSlackCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    channelIdsCondition?: YqlCondition,
+    senderCondition?: YqlCondition,
+  ) {
+    const conditions = []
+
+    conditions.push(
+      or([
+        userInput("@query", hits),
+        nearestNeighbor("text_embeddings", "e", hits),
+      ]),
+    )
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    }
+    if (channelIdsCondition) {
+      conditions.push(channelIdsCondition)
+    }
+    if (senderCondition) {
+      conditions.push(senderCondition)
+    }
+
+    return and(conditions)
+  }
+
   private buildDefaultCondition(
     hits: number,
     app: Apps | Apps[] | null,
@@ -806,6 +837,7 @@ export class VespaService {
     driveIds: string[] = [],
     selectedItem: Record<string, unknown> = {},
     email?: string,
+    appFilters: any = {},
   ): YqlProfile => {
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
@@ -833,14 +865,25 @@ export class VespaService {
           break
 
         case Apps.Gmail:
+          // Build enhanced Gmail condition with appFilters
+          const gmailFilters = appFilters[Apps.Gmail] || {}
+          const enhancedMailParticipants = this.buildEnhancedMailParticipants(
+            mailParticipants,
+            gmailFilters,
+          )
+          const enhancedTimestampRange = this.mergeTimestampRanges(
+            timestampRange,
+            gmailFilters.timeRange,
+          )
+          
           appQueries.push(
             this.buildGmailCondition(
               hits,
               app,
               entity,
-              timestampRange,
+              enhancedTimestampRange,
               notInMailLabels,
-              mailParticipants,
+              enhancedMailParticipants,
             ),
           )
           sources.add(mailSchema)
@@ -873,19 +916,41 @@ export class VespaService {
           break
 
         case Apps.Slack:
+          // Build enhanced Slack condition with appFilters
+          const slackFilters = appFilters[Apps.Slack] || {}
           const slackChannelIds =
             (selectedItem[Apps.Slack] as string[]) || channelIds
           const channelCond = buildDocsInclusionCondition(
             "channelId",
             slackChannelIds,
           )
+          console.log('I am printing the slackFilters',slackFilters)
+          // Add senderId filter if provided (handle multiple senderIds)
+          let senderCond: YqlCondition | undefined
+          if (slackFilters.senderId && slackFilters.senderId.length > 0) {
+            
+              // Multiple senderIds - create OR condition
+              const senderConditions = slackFilters.senderId.map((senderId: string) => 
+                contains("userId", senderId)
+              )
+              senderCond = or(senderConditions)
+            
+          }
+          
+          // Merge timestamp ranges for Slack
+          const enhancedSlackTimestampRange = this.mergeTimestampRanges(
+            timestampRange,
+            slackFilters.timeRange,
+          )
+          
           appQueries.push(
-            this.buildSlackCondition(
+            this.buildEnhancedSlackCondition(
               hits,
               app,
               entity,
-              timestampRange,
+              enhancedSlackTimestampRange,
               channelCond,
+              senderCond,
             ),
           )
           sources
@@ -1169,6 +1234,140 @@ export class VespaService {
   private getExcludeAttachmentCondition = (): YqlCondition => {
     const appCondition = contains("app", Apps.Attachment)
     return not(appCondition)
+  }
+
+  // Helper function to build enhanced mail participants from appFilters
+  // Uses intersection logic: if both existing and app filters exist, take intersection
+  // If only one exists, use that one
+  private buildEnhancedMailParticipants = (
+    existingParticipants: MailParticipant | null,
+    gmailFilters: any,
+  ): MailParticipant | null => {
+    // If no app filters, return existing participants
+    if (!gmailFilters || Object.keys(gmailFilters).length === 0) {
+      return existingParticipants
+    }
+
+    // Extract app filter participants
+    const appFilterParticipants: MailParticipant = {}
+    if (gmailFilters.from && Array.isArray(gmailFilters.from)) {
+      appFilterParticipants.from = gmailFilters.from.filter(Boolean)
+    }
+    if (gmailFilters.to && Array.isArray(gmailFilters.to)) {
+      appFilterParticipants.to = gmailFilters.to.filter(Boolean)
+    }
+    if (gmailFilters.cc && Array.isArray(gmailFilters.cc)) {
+      appFilterParticipants.cc = gmailFilters.cc.filter(Boolean)
+    }
+    if (gmailFilters.bcc && Array.isArray(gmailFilters.bcc)) {
+      appFilterParticipants.bcc = gmailFilters.bcc.filter(Boolean)
+    }
+
+    // If no existing participants, use only app filters
+    if (!existingParticipants || Object.keys(existingParticipants).length === 0) {
+      return Object.keys(appFilterParticipants).length === 0 ? null : appFilterParticipants
+    }
+
+    // Both exist - take intersection
+    const enhanced: MailParticipant = {}
+
+    // For each field, take intersection if both have values, otherwise use the one that exists
+    if (existingParticipants.from && appFilterParticipants.from) {
+      // Intersection: only participants that exist in both
+      enhanced.from = existingParticipants.from.filter(email => 
+        appFilterParticipants.from!.includes(email)
+      )
+    } else if (existingParticipants.from) {
+      enhanced.from = existingParticipants.from
+    } else if (appFilterParticipants.from) {
+      enhanced.from = appFilterParticipants.from
+    }
+
+    if (existingParticipants.to && appFilterParticipants.to) {
+      // Intersection: only participants that exist in both
+      enhanced.to = existingParticipants.to.filter(email => 
+        appFilterParticipants.to!.includes(email)
+      )
+    } else if (existingParticipants.to) {
+      enhanced.to = existingParticipants.to
+    } else if (appFilterParticipants.to) {
+      enhanced.to = appFilterParticipants.to
+    }
+
+    if (existingParticipants.cc && appFilterParticipants.cc) {
+      // Intersection: only participants that exist in both
+      enhanced.cc = existingParticipants.cc.filter(email => 
+        appFilterParticipants.cc!.includes(email)
+      )
+    } else if (existingParticipants.cc) {
+      enhanced.cc = existingParticipants.cc
+    } else if (appFilterParticipants.cc) {
+      enhanced.cc = appFilterParticipants.cc
+    }
+
+    if (existingParticipants.bcc && appFilterParticipants.bcc) {
+      // Intersection: only participants that exist in both
+      enhanced.bcc = existingParticipants.bcc.filter(email => 
+        appFilterParticipants.bcc!.includes(email)
+      )
+    } else if (existingParticipants.bcc) {
+      enhanced.bcc = existingParticipants.bcc
+    } else if (appFilterParticipants.bcc) {
+      enhanced.bcc = appFilterParticipants.bcc
+    }
+
+    // Return null if no participants are set
+    return Object.keys(enhanced).length === 0 ? null : enhanced
+  }
+
+  // Helper function to merge timestamp ranges
+  // Uses intersection logic: if both existing and app filters exist, take intersection
+  // If only one exists, use that one
+  private mergeTimestampRanges = (
+    existingRange: { to: number | null; from: number | null } | null | undefined,
+    filterTimeRange: { startDate: number; endDate: number } | undefined,
+  ): { to: number | null; from: number | null } | null => {
+    // If no app filter time range, return existing range
+    if (!filterTimeRange) {
+      return existingRange || null
+    }
+
+    // Extract app filter time range
+    const appFilterRange: { to: number | null; from: number | null } = {
+      to: filterTimeRange.endDate || null,
+      from: filterTimeRange.startDate || null,
+    }
+
+    // If no existing range, use only app filter range
+    if (!existingRange || (existingRange.to === null && existingRange.from === null)) {
+      return appFilterRange
+    }
+
+    // Both exist - take intersection (most restrictive range)
+    const merged: { to: number | null; from: number | null } = {
+      from: null,
+      to: null,
+    }
+
+    // For from (start): take the later/higher timestamp (more restrictive start)
+    if (existingRange.from !== null && appFilterRange.from !== null) {
+      merged.from = Math.max(existingRange.from, appFilterRange.from)
+    } else if (existingRange.from !== null) {
+      merged.from = existingRange.from
+    } else if (appFilterRange.from !== null) {
+      merged.from = appFilterRange.from
+    }
+
+    // For to (end): take the earlier/lower timestamp (more restrictive end)
+    if (existingRange.to !== null && appFilterRange.to !== null) {
+      merged.to = Math.min(existingRange.to, appFilterRange.to)
+    } else if (existingRange.to !== null) {
+      merged.to = existingRange.to
+    } else if (appFilterRange.to !== null) {
+      merged.to = appFilterRange.to
+    }
+
+    return merged
   }
 
   getAllDocumentsForAgent = async (
@@ -1635,6 +1834,7 @@ export class VespaService {
       driveIds = [], // docIds
       selectedItem,
       processedCollectionSelections = {},
+      appFilters = {}, // Add appFilters parameter
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1662,9 +1862,10 @@ export class VespaService {
       driveIds,
       selectedItem,
       email,
+      appFilters, // Pass appFilters to the profile builder
     )
 
-    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
+    console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,

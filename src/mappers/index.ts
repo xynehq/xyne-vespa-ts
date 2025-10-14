@@ -313,6 +313,12 @@ export const VespaSearchResponseToSearchResult = (
             if (!fields.description) {
               fields.description = ""
             }
+            if(!fields.name){
+              fields.name = fields.docId
+            }
+            if(!fields.channelName){
+              fields.channelName = fields.docId
+            }
 
             return ChatContainerResponseSchema.parse(fields)
           } else if (
