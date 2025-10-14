@@ -2199,7 +2199,7 @@ export class VespaService {
       const whereConditions: YqlCondition[] = []
 
       if (conditions.length > 0) {
-        whereConditions.push(or(conditions))
+        whereConditions.push(and(conditions))
       }
 
       whereConditions.push(this.getExcludeAttachmentCondition())
@@ -2221,11 +2221,11 @@ export class VespaService {
       const mainConditions: YqlCondition[] = []
 
       if (conditions.length > 0 && appEntityConditions.length > 0) {
-        mainConditions.push(or(conditions), or(appEntityConditions))
+        mainConditions.push(and([...conditions, ...appEntityConditions]))
       } else if (conditions.length > 0) {
-        mainConditions.push(or(conditions))
+        mainConditions.push(and(conditions))
       } else if (appEntityConditions.length > 0) {
-        mainConditions.push(or(appEntityConditions))
+        mainConditions.push(and(appEntityConditions))
       }
 
       if (kbConditions.length > 0) {
