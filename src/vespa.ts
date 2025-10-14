@@ -1420,7 +1420,6 @@ export class VespaService {
       eventStatus = null,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
-    console.log(mailParticipants, "mailParticipants in searchVespa")
     // Determine the timestamp cutoff based on lastUpdated
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
@@ -1465,7 +1464,7 @@ export class VespaService {
       attendees,
       eventStatus,
     )
-    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
