@@ -50,6 +50,7 @@ import {
   getErrorMessage,
   getGmailParticipantsConditions,
   isValidEmail,
+  isValidTimestampRange,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
 import { And, Or, FuzzyContains } from "./yql/conditions"
@@ -1419,7 +1420,6 @@ export class VespaService {
       eventStatus = null,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
-    console.log(mailParticipants, "mailParticipants in searchVespa")
     // Determine the timestamp cutoff based on lastUpdated
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
@@ -1464,7 +1464,7 @@ export class VespaService {
       attendees,
       eventStatus,
     )
-    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2117,15 +2117,16 @@ export class VespaService {
     }
 
     // Timestamp conditions
-    if (timestampRange) {
+    if (isValidTimestampRange(timestampRange)) {
       const timeConditions: YqlCondition[] = []
-      const fieldForRange = timestampField
-      timeConditions.push(
-        or(
-          fieldForRange.map((field) => timestamp(field, field, timestampRange)),
-        ),
-      )
-      if (timeConditions.length > 0) {
+      const validFields = timestampField.filter(Boolean)
+
+      if (validFields.length > 0) {
+        timeConditions.push(
+          or(
+            validFields.map((field) => timestamp(field, field, timestampRange)),
+          ),
+        )
         conditions.push(...timeConditions)
       }
     }
