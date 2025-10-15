@@ -2977,6 +2977,162 @@ export class VespaService {
     })
   }
 
+  /**
+   * Fetches Slack channel or user information based on the passed entity type
+   * @param entity - The Slack entity type (SlackEntity.Channel or SlackEntity.User)
+   * @param identifier - Optional identifier to search for (email for users, channel name/id for channels). If empty, returns all with pagination
+   * @param requestingUserEmail - Email of the user making the request (for permissions)
+   * @param app - The app type (should be Apps.Slack)
+   * @param limit - Number of results to return (default: 50)
+   * @param offset - Offset for pagination (default: 0)
+   * @returns Promise<VespaSearchResponse> containing the matching Slack entities
+   */
+  fetchSlackEntity = async (
+    entity: SlackEntity,
+    identifier: string | null | undefined,
+    requestingUserEmail: string,
+    app: Apps = Apps.Slack,
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<VespaSearchResponse> => {
+    if (app !== Apps.Slack) {
+      throw new Error(`Expected app to be Slack, but received: ${app}`)
+    }
+
+    // Validate entity type for the generic function
+    if (entity !== SlackEntity.User && entity !== SlackEntity.Channel) {
+      throw new Error(`Unsupported Slack entity type: ${entity}`)
+    }
+
+    try {
+      // Use the generic function for both users and channels
+      return await this.fetchSlackEntities(
+        entity as SlackEntity.User | SlackEntity.Channel,
+        identifier,
+        requestingUserEmail,
+        limit,
+        offset,
+        true // Use semantic search
+      )
+    } catch (error) {
+      const isListAll = !identifier || identifier.trim().length === 0
+      const trimmedIdentifier = identifier?.trim() || ""
+      
+      this.logger.error(
+        `Error fetching Slack ${entity}${isListAll ? " (list all)" : ` with identifier "${trimmedIdentifier}"`}`,
+        error,
+      )
+      throw new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: entity === SlackEntity.User ? chatUserSchema : chatContainerSchema,
+        message: `Failed to fetch Slack ${entity}`,
+      })
+    }
+  }
+
+  /**
+   * Generic function to fetch Slack entities (users or channels) with semantic search
+   * @param entity - The Slack entity type (SlackEntity.User or SlackEntity.Channel)
+   * @param identifier - Search identifier (email/name for users, channel name for channels). If empty, returns all with pagination
+   * @param requestingUserEmail - Email of the user making the request
+   * @param limit - Number of results to return
+   * @param offset - Offset for pagination (used when identifier is empty)
+   * @param useSemanticSearch - Whether to use semantic search for specific queries (default: true)
+   * @returns Promise<VespaSearchResponse> containing the matching Slack entities
+   */
+  private fetchSlackEntities = async (
+    entity: SlackEntity.User | SlackEntity.Channel,
+    identifier: string | null | undefined,
+    requestingUserEmail: string,
+    limit: number,
+    offset: number = 0,
+    useSemanticSearch: boolean = true,
+  ): Promise<VespaSearchResponse> => {
+    const isListAll = !identifier || identifier.trim().length === 0
+    const trimmedIdentifier = identifier?.trim() || ""
+    
+    // Entity-specific configuration
+    const entityConfig = {
+      [SlackEntity.User]: {
+        schema: chatUserSchema as VespaSchema,
+        searchFields: ["email", "name", "docId"],
+        vectorField: "user_embeddings",
+        entityName: "user",
+      },
+      [SlackEntity.Channel]: {
+        schema: chatContainerSchema as VespaSchema,
+        searchFields: ["name", "channelName", "docId"],
+        vectorField: "channel_embeddings",
+        entityName: "channel",
+      },
+    }
+
+    const config = entityConfig[entity]
+    if (!config) {
+      throw new Error(`Unsupported Slack entity type: ${entity}`)
+    }
+
+    let yql: string
+    let searchPayload: any
+
+    if (isListAll) {
+      // List all entities with pagination - no permissions for Slack entities
+      yql = YqlBuilder.create()
+        .from(config.schema)
+        .where(contains("app", Apps.Slack))
+        .limit(limit)
+        .offset(offset)
+        .build()
+
+      searchPayload = {
+        yql,
+        hits: limit,
+        offset,
+        "ranking.profile": "unranked",
+        timeout: "15s",
+      }
+      console.log(yql)
+
+      this.logger.info(
+        `Fetching all Slack ${config.entityName}s (page ${Math.floor(offset / limit) + 1})`,
+      )
+    } else {
+      // BM25 text search only - no permissions for Slack entities
+      yql = YqlBuilder.create()
+        .from(config.schema)
+        .where(
+          or([
+            userInput("@query", limit),                      // BM25 text search
+            ...config.searchFields.map(field => matches(field, trimmedIdentifier)) // Pattern matches
+          ])
+        )
+        .limit(limit)
+        .build()
+        console.log(yql)
+      searchPayload = {
+        yql,
+        query: trimmedIdentifier,
+        hits: limit,
+        "ranking.profile": "default_bm25",
+        timeout: "10s",
+      }
+
+      this.logger.info(
+        `Using BM25 text search for Slack ${config.entityName}: "${trimmedIdentifier}"`,
+      )
+    }
+
+    const response = await this.vespa.search<VespaSearchResponse>(searchPayload)
+    
+    this.logger.info(
+      `Fetched ${response.root?.children?.length || 0} Slack ${config.entityName}s${
+        isListAll ? ` (page ${Math.floor(offset / limit) + 1})` : ` for identifier: "${trimmedIdentifier}"`
+      }`,
+    )
+    
+    return response
+  }
+
   getFolderItems = async (
     docIds: string[],
     schema: VespaSchema,
