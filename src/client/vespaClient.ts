@@ -19,7 +19,7 @@ import {
   chatUserSchema,
   mailSchema,
 } from "../types"
-import { getErrorMessage } from "../utils"
+import { getErrorMessage, isValidEmail } from "../utils"
 import { handleVespaGroupResponse } from "../mappers"
 import type { ILogger } from "../types"
 import { YqlBuilder } from "../yql/yqlBuilder"
@@ -1277,7 +1277,11 @@ class VespaClient {
     const yql = YqlBuilder.create()
       .select()
       .from(chatUserSchema)
-      .where(contains("email", email))
+      .where(
+        isValidEmail(email)
+          ? contains("email", email)
+          : or([matches("name", email), matches("email", email)]),
+      )
       .build()
 
     const url = `${this.vespaEndpoint}/search/`
