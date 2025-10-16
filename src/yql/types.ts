@@ -32,7 +32,7 @@ export interface YqlBuilderOptions {
   limit?: number
   offset?: number
   timeout?: string
-  requirePermissions?: boolean
+  requirePermissions: boolean
   validateSyntax?: boolean
 }
 

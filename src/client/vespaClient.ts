@@ -721,7 +721,7 @@ class VespaClient {
       )
 
       // Construct the YQL query for this batch
-      const yql = YqlBuilder.create()
+      const yql = YqlBuilder.create({ requirePermissions: false })
         .select(["docId", "updatedAt", "permissions"])
         .from(chatContainerSchema)
         .where(inArray("docId", batchDocIds))
@@ -800,7 +800,7 @@ class VespaClient {
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .select(["docId", "updatedAt"])
       .from("*")
       .where(inArray("docId", docIds))
@@ -876,7 +876,7 @@ class VespaClient {
     >
   > {
     // Construct the YQL query
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .select(["docId", "mailId", "updatedAt", "userMap"])
       .from("mail")
       .where(inArray("mailId", mailIds))
@@ -958,7 +958,7 @@ class VespaClient {
     docIds: string[],
   ): Promise<Record<string, { exists: boolean; updatedAt: number | null }>> {
     // Construct the YQL query
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .select(["docId", "updatedAt"])
       .from(schema)
       .where(inArray("docId", docIds))
@@ -1082,7 +1082,7 @@ class VespaClient {
 
   async ifMailDocExist(email: string, docId: string): Promise<boolean> {
     // Construct the YQL query using userMap with sameElement
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .select("docId")
       .from(mailSchema)
       .where(contains("userMap", sameElement(email, docId)))
@@ -1184,7 +1184,7 @@ class VespaClient {
     threadId: string[],
   ): Promise<VespaSearchResponse> {
     const yqlIds = threadId.map((id) => contains("threadId", id))
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .from(chatMessageSchema)
       .where(or(yqlIds))
       .build()
@@ -1224,7 +1224,7 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     const yqlIds = threadIds.map((id) => contains("threadId", id))
     // Include permissions check to ensure user has access to these emails
-    const yql = YqlBuilder.create({ email })
+    const yql = YqlBuilder.create({ email, requirePermissions: true })
       .from(mailSchema)
       .where(or(yqlIds))
       .build()
@@ -1274,7 +1274,11 @@ class VespaClient {
   }
 
   async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
-    const yql = YqlBuilder.create()
+    // For user lookup, we typically want to bypass permissions since we're looking up user records directly
+    const yql = YqlBuilder.create({
+      email: email,
+      requirePermissions: false,
+    })
       .select()
       .from(chatUserSchema)
       .where(contains("email", email))
@@ -1312,7 +1316,7 @@ class VespaClient {
   async getChatContainerIdByChannelName(
     channelName: string,
   ): Promise<VespaSearchResponse> {
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .select("docId")
       .from(chatContainerSchema)
       .where(contains("name", channelName))
@@ -1357,7 +1361,10 @@ class VespaClient {
     email: string,
   ): Promise<VespaSearchResponse> {
     let yqlQuery
-    const yqlBuilder = YqlBuilder.create({ email }).from(schema)
+    const yqlBuilder = YqlBuilder.create({
+      email,
+      requirePermissions: true,
+    }).from(schema)
     if (!docId.length) {
       // "My Drive" is the special root directory name that Google Drive uses internally
       // while Ingestion we don't get the My Drive Folder , but all its children has parent Name as My Drive
