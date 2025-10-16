@@ -867,25 +867,129 @@ export class VespaService {
         case Apps.Gmail:
           // Build enhanced Gmail condition with appFilters
           const gmailFilters = appFilters[Apps.Gmail] || {}
-          const enhancedMailParticipants = this.buildEnhancedMailParticipants(
-            mailParticipants,
-            gmailFilters,
-          )
-          const enhancedTimestampRange = this.mergeTimestampRanges(
-            timestampRange,
-            gmailFilters.timeRange,
-          )
           
-          appQueries.push(
-            this.buildGmailCondition(
-              hits,
-              app,
-              entity,
-              enhancedTimestampRange,
-              notInMailLabels,
-              enhancedMailParticipants,
-            ),
-          )
+          // Handle new multiple filters format
+          const gmailFilterConditions: YqlCondition[] = []
+          
+          if (gmailFilters?.filters && Array.isArray(gmailFilters.filters)) {
+            // Process multiple filter groups
+            for (const filter of gmailFilters.filters) {
+              const groupConditions: YqlCondition[] = []
+              
+              // Add base search condition
+              groupConditions.push(
+                or([
+                  userInput("@query", hits),
+                  nearestNeighbor("chunk_embeddings", "e", hits),
+                ])
+              )
+              
+              // Build mail participant conditions for this filter group
+              const filterParticipants: MailParticipant = {}
+              if (filter.from && Array.isArray(filter.from)) {
+                filterParticipants.from = filter.from.filter(Boolean)
+              }
+              if (filter.to && Array.isArray(filter.to)) {
+                filterParticipants.to = filter.to.filter(Boolean)
+              }
+              if (filter.cc && Array.isArray(filter.cc)) {
+                filterParticipants.cc = filter.cc.filter(Boolean)
+              }
+              if (filter.bcc && Array.isArray(filter.bcc)) {
+                filterParticipants.bcc = filter.bcc.filter(Boolean)
+              }
+              
+              // Merge filter participants with existing mailParticipants
+              const enhancedParticipants = this.buildEnhancedMailParticipants(
+                mailParticipants,
+                { ...filterParticipants }
+              )
+              
+              // Add participant conditions for this filter group
+              if (enhancedParticipants && Object.keys(enhancedParticipants).length > 0) {
+                const participantConditions = getGmailParticipantsConditions(
+                  enhancedParticipants,
+                  this.logger,
+                )
+                if (participantConditions.length > 0) {
+                  groupConditions.push(...participantConditions)
+                }
+              }
+              
+              // Add time range condition for this filter group (merge with existing timestamp range)
+              if (filter.timeRange) {
+                const mergedTimestampRange = this.mergeTimestampRanges(
+                  timestampRange,
+                  filter.timeRange,
+                )
+                if (mergedTimestampRange) {
+                  const timeCondition = timestamp("timestamp", "timestamp", mergedTimestampRange)
+                  groupConditions.push(timeCondition)
+                }
+              } else if (timestampRange) {
+                // Use global timestamp range if no filter-specific range
+                const timeCondition = timestamp("timestamp", "timestamp", timestampRange)
+                groupConditions.push(timeCondition)
+              }
+              
+              // Add not in mail labels condition
+              if (notInMailLabels && notInMailLabels.length > 0) {
+                const labelConditions = notInMailLabels
+                  .filter((label) => label && label.trim())
+                  .map((label) => contains("labels", label.trim()))
+                
+                if (labelConditions.length > 0) {
+                  const combinedLabels = labelConditions.length === 1
+                    ? labelConditions[0]!
+                    : or(labelConditions)
+                  groupConditions.push(combinedLabels.not())
+                }
+              }
+              
+              // If this filter group has conditions, add them as an AND group
+              if (groupConditions.length > 0) {
+                gmailFilterConditions.push(and(groupConditions))
+              }
+            }
+            
+            // Use multiple filter groups (OR between groups)
+            if (gmailFilterConditions.length > 0) {
+              appQueries.push(or(gmailFilterConditions))
+            } else {
+              // No valid filter groups, use standard condition with enhanced participants
+              const enhancedMailParticipants = this.buildEnhancedMailParticipants(
+                mailParticipants,
+                gmailFilters
+              )
+              appQueries.push(
+                this.buildGmailCondition(
+                  hits,
+                  app,
+                  entity,
+                  timestampRange,
+                  notInMailLabels,
+                  enhancedMailParticipants,
+                ),
+              )
+            }
+          } else {
+            // No filters provided, use standard condition with enhanced participants
+            const enhancedMailParticipants = this.buildEnhancedMailParticipants(
+              mailParticipants,
+              gmailFilters
+            )
+            appQueries.push(
+              this.buildGmailCondition(
+                hits,
+                app,
+                entity,
+                timestampRange,
+                notInMailLabels,
+                enhancedMailParticipants,
+              ),
+            )
+          }
+          
           sources.add(mailSchema)
           break
 
@@ -924,35 +1028,98 @@ export class VespaService {
             "channelId",
             slackChannelIds,
           )
-          console.log('I am printing the slackFilters',slackFilters)
-          // Add senderId filter if provided (handle multiple senderIds)
-          let senderCond: YqlCondition | undefined
-          if (slackFilters.senderId && slackFilters.senderId.length > 0) {
+          
+          // Handle new multiple filters format
+          const slackFilterConditions: YqlCondition[] = []
+          
+          if (slackFilters?.filters && Array.isArray(slackFilters.filters)) {
+            // Process multiple filter groups
+            for (const filter of slackFilters.filters) {
+              const groupConditions: YqlCondition[] = []
+              
+              // Add senderId conditions for this filter group
+              if (filter.senderId && Array.isArray(filter.senderId) && filter.senderId.length > 0) {
+                const senderConditions = filter.senderId.map((senderId: string) => 
+                  contains("userId", senderId.trim())
+                )
+                groupConditions.push(or(senderConditions))
+              }
+              
+              // Add channelId conditions for this filter group
+              if (filter.channelId && Array.isArray(filter.channelId) && filter.channelId.length > 0) {
+                const channelConditions = filter.channelId.map((channelId: string) => 
+                  contains("channelId", channelId.trim())
+                )
+                groupConditions.push(or(channelConditions))
+              }
+              
+              // Add time range condition for this filter group (merge with existing timestamp range)
+              if (filter.timeRange) {
+                const mergedTimestampRange = this.mergeTimestampRanges(
+                  timestampRange,
+                  filter.timeRange,
+                )
+                if (mergedTimestampRange) {
+                  const timeCondition = timestamp("updatedAt", "updatedAt", mergedTimestampRange)
+                  groupConditions.push(timeCondition)
+                }
+              } else if (timestampRange) {
+                // Use global timestamp range if no filter-specific range
+                const timeCondition = timestamp("updatedAt", "updatedAt", timestampRange)
+                groupConditions.push(timeCondition)
+              }
+              
+              // If this filter group has conditions, add them as an AND group
+              if (groupConditions.length > 0) {
+                slackFilterConditions.push(and(groupConditions))
+              }
+            }
             
-              // Multiple senderIds - create OR condition
-              const senderConditions = slackFilters.senderId.map((senderId: string) => 
-                contains("userId", senderId)
+            // Build condition using multiple filter groups (OR between groups)
+            if (slackFilterConditions.length > 0) {
+              const baseConditions = [
+                or([
+                  userInput("@query", hits),
+                  nearestNeighbor("text_embeddings", "e", hits),
+                ]),
+              ]
+              
+              // Add the channel condition from selectedItem if present
+              if (channelCond) {
+                baseConditions.push(channelCond)
+              }
+              
+              // Add combined filter conditions (OR between multiple filter groups)
+              baseConditions.push(or(slackFilterConditions))
+              
+              appQueries.push(and(baseConditions))
+            } else {
+              // No valid filter groups, use standard enhanced condition
+              appQueries.push(
+                this.buildEnhancedSlackCondition(
+                  hits,
+                  app,
+                  entity,
+                  timestampRange,
+                  channelCond,
+                  undefined,
+                ),
               )
-              senderCond = or(senderConditions)
-            
+            }
+          } else {
+            // No filters provided, use standard condition
+            appQueries.push(
+              this.buildEnhancedSlackCondition(
+                hits,
+                app,
+                entity,
+                timestampRange,
+                channelCond,
+                undefined,
+              ),
+            )
           }
           
-          // Merge timestamp ranges for Slack
-          const enhancedSlackTimestampRange = this.mergeTimestampRanges(
-            timestampRange,
-            slackFilters.timeRange,
-          )
-          
-          appQueries.push(
-            this.buildEnhancedSlackCondition(
-              hits,
-              app,
-              entity,
-              enhancedSlackTimestampRange,
-              channelCond,
-              senderCond,
-            ),
-          )
           sources
             .add(chatUserSchema)
             .add(chatMessageSchema)
@@ -1236,87 +1403,66 @@ export class VespaService {
     return not(appCondition)
   }
 
-  // Helper function to build enhanced mail participants from appFilters
-  // Uses intersection logic: if both existing and app filters exist, take intersection
+  // Helper function to build enhanced mail participants from individual filter
+  // Uses intersection logic: if both existing and filter participants exist, take intersection
   // If only one exists, use that one
   private buildEnhancedMailParticipants = (
     existingParticipants: MailParticipant | null,
-    gmailFilters: any,
+    filterParticipants: MailParticipant,
   ): MailParticipant | null => {
-    // If no app filters, return existing participants
-    if (!gmailFilters || Object.keys(gmailFilters).length === 0) {
+    // If no filter participants, return existing participants
+    if (!filterParticipants || Object.keys(filterParticipants).length === 0) {
       return existingParticipants
     }
 
-    // Extract app filter participants
-    const appFilterParticipants: MailParticipant = {}
-    if (gmailFilters.from && Array.isArray(gmailFilters.from)) {
-      appFilterParticipants.from = gmailFilters.from.filter(Boolean)
-    }
-    if (gmailFilters.to && Array.isArray(gmailFilters.to)) {
-      appFilterParticipants.to = gmailFilters.to.filter(Boolean)
-    }
-    if (gmailFilters.cc && Array.isArray(gmailFilters.cc)) {
-      appFilterParticipants.cc = gmailFilters.cc.filter(Boolean)
-    }
-    if (gmailFilters.bcc && Array.isArray(gmailFilters.bcc)) {
-      appFilterParticipants.bcc = gmailFilters.bcc.filter(Boolean)
-    }
-
-    // If no existing participants, use only app filters
+    // If no existing participants, use only filter participants
     if (!existingParticipants || Object.keys(existingParticipants).length === 0) {
-      return Object.keys(appFilterParticipants).length === 0 ? null : appFilterParticipants
+      return Object.keys(filterParticipants).length === 0 ? null : filterParticipants
     }
 
     // Both exist - take intersection
     const enhanced: MailParticipant = {}
 
-    // For each field, take intersection if both have values, otherwise use the one that exists
-    if (existingParticipants.from && appFilterParticipants.from) {
-      // Intersection: only participants that exist in both
+    if (existingParticipants.from && filterParticipants.from) {
       enhanced.from = existingParticipants.from.filter(email => 
-        appFilterParticipants.from!.includes(email)
+        filterParticipants.from!.includes(email)
       )
     } else if (existingParticipants.from) {
       enhanced.from = existingParticipants.from
-    } else if (appFilterParticipants.from) {
-      enhanced.from = appFilterParticipants.from
+    } else if (filterParticipants.from) {
+      enhanced.from = filterParticipants.from
     }
 
-    if (existingParticipants.to && appFilterParticipants.to) {
-      // Intersection: only participants that exist in both
+    if (existingParticipants.to && filterParticipants.to) {
       enhanced.to = existingParticipants.to.filter(email => 
-        appFilterParticipants.to!.includes(email)
+        filterParticipants.to!.includes(email)
       )
     } else if (existingParticipants.to) {
       enhanced.to = existingParticipants.to
-    } else if (appFilterParticipants.to) {
-      enhanced.to = appFilterParticipants.to
+    } else if (filterParticipants.to) {
+      enhanced.to = filterParticipants.to
     }
 
-    if (existingParticipants.cc && appFilterParticipants.cc) {
-      // Intersection: only participants that exist in both
+    if (existingParticipants.cc && filterParticipants.cc) {
       enhanced.cc = existingParticipants.cc.filter(email => 
-        appFilterParticipants.cc!.includes(email)
+        filterParticipants.cc!.includes(email)
       )
     } else if (existingParticipants.cc) {
       enhanced.cc = existingParticipants.cc
-    } else if (appFilterParticipants.cc) {
-      enhanced.cc = appFilterParticipants.cc
+    } else if (filterParticipants.cc) {
+      enhanced.cc = filterParticipants.cc
     }
 
-    if (existingParticipants.bcc && appFilterParticipants.bcc) {
-      // Intersection: only participants that exist in both
+    if (existingParticipants.bcc && filterParticipants.bcc) {
       enhanced.bcc = existingParticipants.bcc.filter(email => 
-        appFilterParticipants.bcc!.includes(email)
+        filterParticipants.bcc!.includes(email)
       )
     } else if (existingParticipants.bcc) {
       enhanced.bcc = existingParticipants.bcc
-    } else if (appFilterParticipants.bcc) {
-      enhanced.bcc = appFilterParticipants.bcc
+    } else if (filterParticipants.bcc) {
+      enhanced.bcc = filterParticipants.bcc
     }
 
-    // Return null if no participants are set
     return Object.keys(enhanced).length === 0 ? null : enhanced
   }
 

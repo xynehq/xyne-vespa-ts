@@ -1599,23 +1599,29 @@ export type CollectionVespaIds = {
   collectionFileIds?: string[]
 }
 
-export interface AppFilters {
-  Gmail?: {
-    from?: string[]
-    to?: string[]
-    cc?: string[]
-    bcc?: string[]
-    timeRange?: {
-      startDate: number
-      endDate: number
-    }
+export interface AppFilter {
+  id: number // Numeric identifier for this filter
+  // Gmail-specific filters
+  from?: string[]
+  to?: string[]
+  cc?: string[]
+  bcc?: string[]
+  // Slack-specific filters
+  senderId?: string[]
+  channelId?: string[]
+  // Common filters
+  timeRange?: {
+    startDate: number
+    endDate: number
   }
-  Slack?: {
-    senderId?: string
-    timeRange?: {
-      startDate: number
-      endDate: number
-    }
+}
+
+export interface AppFilters {
+  gmail?: {
+    filters?: AppFilter[]
+  }
+  slack?: {
+    filters?: AppFilter[]
   }
 }
 
