@@ -418,6 +418,7 @@ describe("VespaService - HybridDefaultProfile", () => {
       // We need to modify the VespaService to expose the YqlBuilder or create our own
       const yqlBuilder = YqlBuilder.create({
         email: "test@example.com",
+        requirePermissions: true,
         sources: [fileSchema, mailSchema, userSchema],
         targetHits: 10,
       })
