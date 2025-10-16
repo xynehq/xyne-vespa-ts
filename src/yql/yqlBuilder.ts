@@ -58,16 +58,17 @@ export class YqlBuilder {
   private userEmail?: string
   constructor(options: YqlBuilderOptions) {
     const hasEmail = !!(options.email && options.email.trim())
-    const requirePermissionsExplicit = options.requirePermissions !== undefined
     const requirePermissionsValue = options.requirePermissions !== false
 
     // Apply permissions if:
     // 1. Email is provided AND requirePermissions is not explicitly false, OR
     // 2. No email provided but requirePermissions is not explicitly false
-    this.withPermissions = hasEmail
-      ? requirePermissionsValue
-      : requirePermissionsValue
-
+    this.withPermissions = requirePermissionsValue
+    if (this.withPermissions) {
+      if (!hasEmail) {
+        throw new Error("email field is required for permission check")
+      }
+    }
     this.options = {
       email: options.email || "",
       sources: options.sources || [],
