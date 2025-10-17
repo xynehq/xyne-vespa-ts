@@ -420,6 +420,14 @@ export class YqlBuilder {
         yql += ` where (${whereClause})`
       }
     }
+    //group by clause has the highest priority after where
+    if (this.groupByClause) {
+      yql += ` | ${this.groupByClause}`
+    }
+
+    if (this.orderByClause) {
+      yql += ` order by ${this.orderByClause}`
+    }
     // Add other clauses
     if (this.limitClause !== undefined) {
       yql += ` limit ${this.limitClause}`
@@ -428,15 +436,6 @@ export class YqlBuilder {
     if (this.offsetClause !== undefined && this.offsetClause > 0) {
       yql += ` offset ${this.offsetClause}`
     }
-
-    if (this.groupByClause) {
-      yql += ` | ${this.groupByClause}`
-    }
-
-    if (this.orderByClause) {
-      yql += ` order by ${this.orderByClause}`
-    }
-
     // Validate syntax if enabled
     if (this.options.validateSyntax) {
       this.validateYqlSyntax(yql)
