@@ -1470,7 +1470,7 @@ export class VespaService {
       attendees,
       eventStatus,
     )
-    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
