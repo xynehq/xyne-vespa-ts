@@ -685,8 +685,8 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     channelIdsCondition?: YqlCondition,
-  ) {
-    const conditions = []
+  ): YqlCondition {
+    const conditions: YqlCondition[] = []
 
     conditions.push(
       or([
@@ -702,7 +702,7 @@ export class VespaService {
       conditions.push(channelIdsCondition)
     }
 
-    return and(conditions)
+    return conditions.length > 1 ? and(conditions) : conditions[0]!
   }
 
   private buildDefaultCondition(
@@ -1103,21 +1103,11 @@ export class VespaService {
     }
 
     if (includedApps.includes(Apps.Slack)) {
-      const slackConditions: YqlCondition[] = [
-        or([
-          userInput("@query", hits),
-          nearestNeighbor("text_embeddings", "e", hits),
-        ]),
-      ]
-
-      if (timestampRange && (timestampRange.from || timestampRange.to)) {
-        slackConditions.push(
-          timestamp("updatedAt", "updatedAt", timestampRange),
-        )
-      }
-
-      conditions.push(and(slackConditions))
+      conditions.push(
+        this.buildSlackCondition(hits, null, null, timestampRange),
+      )
     }
+
     if (includedApps.includes(Apps.GoogleWorkspace)) {
       conditions.push(
         this.buildGoogleWorkspaceCondition(hits, null, null, timestampRange),
