@@ -630,6 +630,7 @@ export const VespaKbFileSchemaBase = z.object({
   entity: z.nativeEnum(KnowledgeBaseEntity),
   fileName: z.string(),
   description: z.string(),
+  pageTitlte : z.string().optional(),
   storagePath: z.string(),
   chunks: z.array(z.string()),
   image_chunks: z.array(z.string()),
@@ -1502,6 +1503,7 @@ export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
   itemId: true,
   clId: true,
   mimeType: true,
+  pageTitlte: true,
 })
   .extend({
     app: z.literal(Apps.KnowledgeBase),
