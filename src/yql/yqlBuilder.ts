@@ -433,7 +433,7 @@ export class YqlBuilder {
       yql += ` offset ${this.offsetClause}`
     }
 
-    //group by clause has the highest priority after where
+    // group by clause will always have last precedence
     if (this.groupByClause) {
       yql += ` | ${this.groupByClause}`
     }
