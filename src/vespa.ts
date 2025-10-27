@@ -2912,7 +2912,6 @@ export class VespaService {
     sortBy = "desc",
     labels,
     timeRange,
-    isAttachmentRequired,
     participants,
     owner,
     attendees,
@@ -2924,9 +2923,7 @@ export class VespaService {
     rankProfile = SearchModes.NativeRank,
   }: SearchGoogleAppsParams): Promise<VespaSearchResponse> => {
     const appToSourceMap: Record<GoogleApps, VespaSchema | VespaSchema[]> = {
-      [GoogleApps.Gmail]: isAttachmentRequired
-        ? [mailSchema, mailAttachmentSchema]
-        : [mailSchema],
+      [GoogleApps.Gmail]: [mailSchema, mailAttachmentSchema],
       [GoogleApps.Drive]: fileSchema,
       [GoogleApps.Calendar]: eventSchema,
       [GoogleApps.Contacts]: userSchema,
