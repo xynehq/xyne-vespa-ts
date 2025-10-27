@@ -630,7 +630,7 @@ export const VespaKbFileSchemaBase = z.object({
   entity: z.nativeEnum(KnowledgeBaseEntity),
   fileName: z.string(),
   description: z.string(),
-  pageTitlte : z.string().optional(),
+  pageTitlte: z.string().optional(),
   storagePath: z.string(),
   chunks: z.array(z.string()),
   image_chunks: z.array(z.string()),
@@ -1714,7 +1714,6 @@ export interface SearchGoogleAppsParams {
     startTime: number
     endTime: number
   }
-  isAttachmentRequired?: boolean
   participants?: MailParticipant
   owner?: string
   excludeDocIds?: string[]
