@@ -115,3 +115,11 @@ export const formatYqlToReadable = (yql: string) => {
     })
     .join("\n")
 }
+
+export function isValidTimestampRange(
+  range: { from: number | null; to: number | null } | null,
+): range is { from: number | null; to: number | null } {
+  return (
+    !!range && (typeof range.from === "number" || typeof range.to === "number")
+  )
+}

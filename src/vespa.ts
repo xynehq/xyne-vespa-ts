@@ -50,6 +50,7 @@ import {
   getErrorMessage,
   getGmailParticipantsConditions,
   isValidEmail,
+  isValidTimestampRange,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
 import { And, Or, FuzzyContains } from "./yql/conditions"
@@ -267,7 +268,7 @@ export class VespaService {
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
     // the drawback here is that for user field we will get duplicates, for the same
     // email one contact and one from user directory
-    const yql = YqlBuilder.create({ email })
+    const yql = YqlBuilder.create({ email, requirePermissions: true })
       .from(sources)
       .where(
         or([
@@ -354,6 +355,7 @@ export class VespaService {
 
       const yqlBuilder = YqlBuilder.create({
         email: userEmail,
+        requirePermissions: true,
         sources: availableSources,
         targetHits: hits,
       })
@@ -1157,6 +1159,7 @@ export class VespaService {
 
     const yqlBuilder = YqlBuilder.create({
       email,
+      requirePermissions: true,
       sources: [...sources],
       targetHits: hits,
     })
@@ -1230,6 +1233,7 @@ export class VespaService {
 
     return YqlBuilder.create({
       email,
+      requirePermissions: true,
       sources: this.schemaSources,
       targetHits: hits,
     })
@@ -1270,6 +1274,7 @@ export class VespaService {
 
     return YqlBuilder.create({
       email,
+      requirePermissions: true,
       sources: [chatMessageSchema],
       targetHits: hits,
     })
@@ -1348,6 +1353,7 @@ export class VespaService {
 
     return YqlBuilder.create({
       email,
+      requirePermissions: true,
       sources: newSources,
       targetHits: hits,
     })
@@ -1574,6 +1580,7 @@ export class VespaService {
     const schemaSources = [...new Set(sources)]
     const yql = YqlBuilder.create({
       email,
+      requirePermissions: true,
       sources: schemaSources,
       targetHits: limit,
     })
@@ -1764,7 +1771,6 @@ export class VespaService {
       eventStatus = null,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
-    console.log(mailParticipants, "mailParticipants in searchVespa")
     // Determine the timestamp cutoff based on lastUpdated
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
@@ -1809,7 +1815,7 @@ export class VespaService {
       attendees,
       eventStatus,
     )
-    console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2076,7 +2082,8 @@ export class VespaService {
     const yqlIds = docIds.map((id) => contains("docId", id))
     const yqlMailIds = docIds.map((id) => contains("mailId", id))
 
-    const yqlQuery = YqlBuilder.create()
+    // Permission checks are skipped here since we're only retrieving documents by their docIds
+    const yqlQuery = YqlBuilder.create({ requirePermissions: false })
       .from("*")
       .whereOr(...yqlIds, ...yqlMailIds)
       .build()
@@ -2464,15 +2471,16 @@ export class VespaService {
     }
 
     // Timestamp conditions
-    if (timestampRange) {
+    if (isValidTimestampRange(timestampRange)) {
       const timeConditions: YqlCondition[] = []
-      const fieldForRange = timestampField
-      timeConditions.push(
-        or(
-          fieldForRange.map((field) => timestamp(field, field, timestampRange)),
-        ),
-      )
-      if (timeConditions.length > 0) {
+      const validFields = timestampField.filter(Boolean)
+
+      if (validFields.length > 0) {
+        timeConditions.push(
+          or(
+            validFields.map((field) => timestamp(field, field, timestampRange)),
+          ),
+        )
         conditions.push(...timeConditions)
       }
     }
@@ -2539,13 +2547,16 @@ export class VespaService {
         : contains("entity", entity)
     }
 
-    const yqlBuilder = YqlBuilder.create({ email }).from(schema)
+    const yqlBuilder = YqlBuilder.create({
+      email,
+      requirePermissions: true,
+    }).from(schema)
 
     if (!appCondition && !entityCondition) {
       const whereConditions: YqlCondition[] = []
 
       if (conditions.length > 0) {
-        whereConditions.push(or(conditions))
+        whereConditions.push(and(conditions))
       }
 
       whereConditions.push(this.getExcludeAttachmentCondition())
@@ -2567,11 +2578,11 @@ export class VespaService {
       const mainConditions: YqlCondition[] = []
 
       if (conditions.length > 0 && appEntityConditions.length > 0) {
-        mainConditions.push(or(conditions), or(appEntityConditions))
+        mainConditions.push(and([...conditions, ...appEntityConditions]))
       } else if (conditions.length > 0) {
-        mainConditions.push(or(conditions))
+        mainConditions.push(and(conditions))
       } else if (appEntityConditions.length > 0) {
-        mainConditions.push(or(appEntityConditions))
+        mainConditions.push(and(appEntityConditions))
       }
 
       if (kbConditions.length > 0) {
@@ -2655,7 +2666,8 @@ export class VespaService {
     name: string,
     createdByEmail: string,
   ): Promise<VespaDataSourceSearch | null> => {
-    const yql = YqlBuilder.create()
+    // Fetch a single record matching the given name and creator email without permission checks
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .from(datasourceSchema)
       .where(
         and([contains("name", name), contains("createdBy", createdByEmail)]),
@@ -2706,7 +2718,7 @@ export class VespaService {
     createdByEmail: string,
     limit: number = 100,
   ): Promise<VespaSearchResponse> => {
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .from(datasourceSchema)
       .where(contains("createdBy", createdByEmail))
       .limit(limit)
@@ -2739,7 +2751,7 @@ export class VespaService {
     dataSourceId: string,
     uploadedBy: string,
   ): Promise<boolean> => {
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .from(dataSourceFileSchema)
       .where(
         and([
@@ -2786,7 +2798,7 @@ export class VespaService {
     concurrency = 3,
     batchSize = 400,
   ): Promise<VespaSearchResult[] | null> => {
-    const yql = YqlBuilder.create()
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .from(dataSourceFileSchema)
       .where(
         and([
@@ -2828,7 +2840,7 @@ export class VespaService {
 
     const batchPayloads = []
     for (let offset = 0; offset < totalCount; offset += batchSize) {
-      const yql = YqlBuilder.create()
+      const yql = YqlBuilder.create({ requirePermissions: false })
         .from(dataSourceFileSchema)
         .where(
           and([
@@ -2909,7 +2921,7 @@ export class VespaService {
     if (channelId) conditions.push(contains("channelId", channelId))
     if (userId) conditions.push(contains("userId", userId))
 
-    return YqlBuilder.create({ email })
+    return YqlBuilder.create({ email, requirePermissions: true })
       .from(chatMessageSchema)
       .where(and(conditions))
       .buildProfile(profile)
@@ -3082,7 +3094,7 @@ export class VespaService {
       conditions.push(timestampConditions)
     }
 
-    const yqlBuilder = YqlBuilder.create({ email })
+    const yqlBuilder = YqlBuilder.create({ email, requirePermissions: true })
       .from(chatMessageSchema)
       .where(and(conditions))
       .orderBy(timestampField, asc ? "asc" : "desc")
@@ -3353,7 +3365,8 @@ export class VespaService {
       conditions.push(or(parentDocIdConditions))
     }
 
-    const yql = YqlBuilder.create()
+    // Don't require permission checks for KB items
+    const yql = YqlBuilder.create({ requirePermissions: false })
       .from(KbItemsSchema)
       .where(and(conditions))
       .build()
@@ -3513,7 +3526,9 @@ export class VespaService {
       }
     }
 
-    const yqlBuilder = YqlBuilder.create({ email }).from(sources).limit(limit)
+    const yqlBuilder = YqlBuilder.create({ email, requirePermissions: true })
+      .from(sources)
+      .limit(limit)
     // .orderBy(timestampField, sortBy)
 
     if (conditions.length > 0) {

@@ -56,9 +56,19 @@ export class YqlBuilder {
   private options: Required<YqlBuilderOptions>
   private withPermissions: boolean
   private userEmail?: string
-  constructor(options: Partial<YqlBuilderOptions> = {}) {
-    this.withPermissions = !!(options.email && options.email.trim())
+  constructor(options: YqlBuilderOptions) {
+    const hasEmail = !!(options.email && options.email.trim())
+    const requirePermissionsValue = options.requirePermissions !== false
 
+    // Apply permissions if:
+    // 1. Email is provided AND requirePermissions is not explicitly false, OR
+    // 2. No email provided but requirePermissions is not explicitly false
+    this.withPermissions = requirePermissionsValue
+    if (this.withPermissions) {
+      if (!hasEmail) {
+        throw new Error("email field is required for permission check")
+      }
+    }
     this.options = {
       email: options.email || "",
       sources: options.sources || [],
@@ -66,8 +76,7 @@ export class YqlBuilder {
       limit: options.limit || 100,
       offset: options.offset || 0,
       timeout: options.timeout || "2s",
-      requirePermissions:
-        this.withPermissions && options.requirePermissions !== false,
+      requirePermissions: requirePermissionsValue, // Default to true
       validateSyntax: options.validateSyntax !== true,
     }
     this.userEmail = options.email
@@ -411,6 +420,14 @@ export class YqlBuilder {
         yql += ` where (${whereClause})`
       }
     }
+    //group by clause has the highest priority after where
+    if (this.groupByClause) {
+      yql += ` | ${this.groupByClause}`
+    }
+
+    if (this.orderByClause) {
+      yql += ` order by ${this.orderByClause}`
+    }
     // Add other clauses
     if (this.limitClause !== undefined) {
       yql += ` limit ${this.limitClause}`
@@ -419,15 +436,6 @@ export class YqlBuilder {
     if (this.offsetClause !== undefined && this.offsetClause > 0) {
       yql += ` offset ${this.offsetClause}`
     }
-
-    if (this.groupByClause) {
-      yql += ` | ${this.groupByClause}`
-    }
-
-    if (this.orderByClause) {
-      yql += ` order by ${this.orderByClause}`
-    }
-
     // Validate syntax if enabled
     if (this.options.validateSyntax) {
       this.validateYqlSyntax(yql)
@@ -686,7 +694,7 @@ export class YqlBuilder {
   /**
    * Create a new builder instance
    */
-  static create(options?: Partial<YqlBuilderOptions>): YqlBuilder {
+  static create(options: YqlBuilderOptions): YqlBuilder {
     return new YqlBuilder(options)
   }
 }
