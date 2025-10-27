@@ -999,7 +999,7 @@ export class VespaService {
     const buildContactSearch = (): YqlCondition => userInput("@query", hits)
 
     // --- search conditions ---
-    const searchConditions: YqlCondition[] = [
+    let searchConditions: YqlCondition[] = [
       buildDocOrMailSearch(),
       buildSlackSearch(),
       buildContactSearch(),
@@ -1007,16 +1007,18 @@ export class VespaService {
 
     const contextFilters = buildContextFilters(fileIds)
     if (contextFilters.length > 0) {
-      searchConditions.push(or(contextFilters))
+      searchConditions = [or(searchConditions), or(contextFilters)]
     }
+
+    const sources: VespaSchema[] = profile === SearchModes.AttachmentRank ? [fileSchema] : this.schemaSources
 
     return YqlBuilder.create({
       email,
       requirePermissions: true,
-      sources: this.schemaSources,
+      sources,
       targetHits: hits,
     })
-      .from(this.schemaSources)
+      .from(sources)
       .where(and(searchConditions))
       .buildProfile(profile)
   }
