@@ -54,7 +54,6 @@
     "dev:rollup": "rollup -c --watch --no-watch.clearScreen",
     "dev:watch": "nodemon --watch src --watch index.ts --ext ts --exec \"bun run build\"",
     "format": "bunx biome format --write .",
-    "test": "jest",
     "release": "semantic-release",
     "release:dry": "semantic-release --dry-run",
     "prepublishOnly": "bun run build"
