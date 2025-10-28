@@ -851,6 +851,7 @@ class VespaClient {
         yql: yqlQuery,
         hits: mailIds.length,
         maxHits: mailIds.length + 1,
+        timeout: "30s",
       }
 
       const response = await this.fetchWithRetry(url, {
