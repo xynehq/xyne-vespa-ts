@@ -55,7 +55,9 @@
     "dev:watch": "nodemon --watch src --watch index.ts --ext ts --exec \"bun run build\"",
     "format": "bunx biome format --write .",
     "test": "jest",
-    "prepublishOnly": "npm run build"
+    "release": "semantic-release",
+    "release:dry": "semantic-release --dry-run",
+    "prepublishOnly": "bun run build"
   },
   "keywords": [
     "vespa",
@@ -77,6 +79,10 @@
   "devDependencies": {
     "@biomejs/biome": "^2.2.4",
     "@rollup/plugin-node-resolve": "^16.0.1",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.0",
+    "@semantic-release/npm": "^13.1.1",
     "@types/bun": "latest",
     "@types/jest": "^29.5.0",
     "chokidar-cli": "^3.0.0",
@@ -84,6 +90,7 @@
     "nodemon": "^3.1.10",
     "npm-run-all": "^4.1.5",
     "rollup": "^4.46.2",
+    "semantic-release": "^25.0.1",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
