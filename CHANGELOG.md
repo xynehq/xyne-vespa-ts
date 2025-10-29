@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.0...v1.2.1) (2025-10-29)
+
+
+### Bug Fixes
+
+* attendee search ([#41](https://github.com/xynehq/xyne-vespa-ts/issues/41)) ([0e9d527](https://github.com/xynehq/xyne-vespa-ts/commit/0e9d52746823e73037b1d01bf94bd0d9647ad10c))
+
 # [1.2.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.1.13...v1.2.0) (2025-10-28)
 
 
