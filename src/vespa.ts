@@ -437,23 +437,28 @@ export class VespaService {
     attendees?: string[] | null,
     eventStatus?: EventStatusType | null,
   ) {
+    if (includedApps.length === 0) return []
+
     const appConditions = []
 
-    if (includedApps.length === 0) {
-      return [this.buildDefaultCondition(hits, app, entity, timestampRange)]
+    if (
+      includedApps.includes(Apps.GoogleDrive) ||
+      includedApps.includes(Apps.GoogleCalendar)
+    ) {
+      // this default condition will cover for calendar and drive
+      appConditions.push(
+        this.buildDefaultCondition(
+          hits,
+          app,
+          entity,
+          timestampRange,
+          owner,
+          attendees,
+          eventStatus,
+          includedApps,
+        ),
+      )
     }
-    // default condition to cover all other apps
-    appConditions.push(
-      this.buildDefaultCondition(
-        hits,
-        app,
-        entity,
-        timestampRange,
-        owner,
-        attendees,
-        eventStatus,
-      ),
-    )
 
     if (includedApps.includes(Apps.GoogleWorkspace)) {
       appConditions.push(
@@ -476,9 +481,6 @@ export class VespaService {
       appConditions.push(
         this.buildSlackCondition(hits, app, entity, timestampRange),
       )
-    }
-
-    if (includedApps.includes(Apps.DataSource)) {
     }
 
     return appConditions
@@ -620,7 +622,9 @@ export class VespaService {
         mailParticipants,
         this.logger,
       )
+
       if (mailParticipantsCondition && mailParticipantsCondition.length > 0) {
+
         conditions.push(and(mailParticipantsCondition))
       }
     }
@@ -683,8 +687,8 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     channelIdsCondition?: YqlCondition,
-  ) {
-    const conditions = []
+  ): YqlCondition {
+    const conditions: YqlCondition[] = []
 
     conditions.push(
       or([
@@ -700,7 +704,7 @@ export class VespaService {
       conditions.push(channelIdsCondition)
     }
 
-    return and(conditions)
+    return conditions.length > 1 ? and(conditions) : conditions[0]!
   }
 
   // Enhanced Slack condition that supports additional filters like senderId
@@ -742,6 +746,7 @@ export class VespaService {
     owner?: string | string[] | null,
     attendees?: string[] | null,
     eventStatus?: EventStatusType | null,
+    includedApps?: Apps[],
   ) {
     const conditions = []
 
@@ -753,14 +758,22 @@ export class VespaService {
     )
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      conditions.push(
-        or([
-          timestamp("updatedAt", "updatedAt", timestampRange),
-          timestamp("creationTime", "creationTime", timestampRange),
-          timestamp("startTime", "startTime", timestampRange),
-          timestamp("timestamp", "timestamp", timestampRange),
-        ]),
-      )
+      const timestampConds = []
+      if (includedApps?.includes(Apps.GoogleCalendar)) {
+        timestampConds.push(timestamp("startTime", "startTime", timestampRange))
+      }
+
+      if (includedApps?.includes(Apps.GoogleDrive)) {
+        timestampConds.push(timestamp("updatedAt", "updatedAt", timestampRange))
+      }
+
+      if (timestampConds.length === 1) {
+        if (timestampConds[0]) {
+          conditions.push(timestampConds[0])
+        }
+      } else if (timestampConds.length > 1) {
+        conditions.push(or(timestampConds))
+      }
     }
 
     if (app && app === Apps.GoogleDrive) {
@@ -1221,7 +1234,7 @@ export class VespaService {
     const buildContactSearch = (): YqlCondition => userInput("@query", hits)
 
     // --- search conditions ---
-    const searchConditions: YqlCondition[] = [
+    let searchConditions: YqlCondition[] = [
       buildDocOrMailSearch(),
       buildSlackSearch(),
       buildContactSearch(),
@@ -1229,16 +1242,18 @@ export class VespaService {
 
     const contextFilters = buildContextFilters(fileIds)
     if (contextFilters.length > 0) {
-      searchConditions.push(or(contextFilters))
+      searchConditions = [or(searchConditions), or(contextFilters)]
     }
+
+    const sources: VespaSchema[] = profile === SearchModes.AttachmentRank ? [fileSchema] : this.schemaSources
 
     return YqlBuilder.create({
       email,
       requirePermissions: true,
-      sources: this.schemaSources,
+      sources,
       targetHits: hits,
     })
-      .from(this.schemaSources)
+      .from(sources)
       .where(and(searchConditions))
       .buildProfile(profile)
   }
@@ -1291,11 +1306,28 @@ export class VespaService {
     excludedApps?: Apps[],
     email?: string,
   ): YqlProfile => {
-    let conditions: YqlCondition[] = [
-      this.buildDefaultCondition(hits, null, null),
-    ]
+    const includedApps = this.getIncludedApps(excludedApps)
+    let conditions: YqlCondition[] = []
 
-    if (notInMailLabels && notInMailLabels.length > 0) {
+    if (
+      includedApps.includes(Apps.GoogleDrive) ||
+      includedApps.includes(Apps.GoogleCalendar)
+    ) {
+      conditions.push(
+        this.buildDefaultCondition(
+          hits,
+          null,
+          null,
+          timestampRange,
+          null,
+          null,
+          null,
+          includedApps,
+        ),
+      )
+    }
+
+    if (includedApps.includes(Apps.Gmail)) {
       conditions.push(
         this.buildGmailCondition(
           hits,
@@ -1307,22 +1339,17 @@ export class VespaService {
       )
     }
 
-    const slackConditions: YqlCondition[] = [
-      or([
-        userInput("@query", hits),
-        nearestNeighbor("text_embeddings", "e", hits),
-      ]),
-    ]
-
-    if (timestampRange && (timestampRange.from || timestampRange.to)) {
-      slackConditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    if (includedApps.includes(Apps.Slack)) {
+      conditions.push(
+        this.buildSlackCondition(hits, null, null, timestampRange),
+      )
     }
 
-    conditions.push(and(slackConditions))
-
-    conditions.push(
-      this.buildGoogleWorkspaceCondition(hits, null, null, timestampRange),
-    )
+    if (includedApps.includes(Apps.GoogleWorkspace)) {
+      conditions.push(
+        this.buildGoogleWorkspaceCondition(hits, null, null, timestampRange),
+      )
+    }
 
     // Start with AllSources and filter out excluded app schemas
     let newSources = this.getSchemaSources()
@@ -1664,25 +1691,16 @@ export class VespaService {
     isDriveConnected?: boolean,
   ): Promise<AppEntityCounts> {
     let excludedApps: Apps[] = []
-    try {
-      if (!isDriveConnected) {
-        excludedApps.push(Apps.GoogleDrive)
-      }
-      if (!isCalendarConnected) {
-        excludedApps.push(Apps.GoogleCalendar)
-      }
-      if (!isGmailConnected) {
-        excludedApps.push(Apps.Gmail)
-      }
-      if (!isSlackConnected) {
-        excludedApps.push(Apps.Slack)
-      }
-    } catch (error) {
-      // If no Slack connector is found, this is normal - exclude Slack from search
-      // Only log as debug since this is expected behavior for users without Slack
-      this.logger.debug(
-        `No Slack connector found for user ${email}, excluding Slack from search`,
-      )
+    if (!isDriveConnected) {
+      excludedApps.push(Apps.GoogleDrive)
+    }
+    if (!isCalendarConnected) {
+      excludedApps.push(Apps.GoogleCalendar)
+    }
+    if (!isGmailConnected) {
+      excludedApps.push(Apps.Gmail)
+    }
+    if (!isSlackConnected) {
       excludedApps.push(Apps.Slack)
     }
 
@@ -1690,10 +1708,10 @@ export class VespaService {
       limit,
       timestampRange ?? null,
       [], // notInMailLabels
-      excludedApps, // excludedApps as fourth parameter
+      excludedApps,
       email,
     )
-    // console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
+    console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1806,25 +1824,16 @@ export class VespaService {
 
     // Check if Slack sync job exists for the user (only for local vespa)
     let excludedApps: Apps[] = []
-    try {
-      if (!isDriveConnected) {
-        excludedApps.push(Apps.GoogleDrive)
-      }
-      if (!isCalendarConnected) {
-        excludedApps.push(Apps.GoogleCalendar)
-      }
-      if (!isGmailConnected) {
-        excludedApps.push(Apps.Gmail)
-      }
-      if (!isSlackConnected) {
-        excludedApps.push(Apps.Slack)
-      }
-    } catch (error) {
-      // If no Slack connector is found, this is normal - exclude Slack from search
-      // Only log as debug since this is expected behavior for users without Slack
-      this.logger.debug(
-        `No Slack connector found for user ${email}, excluding Slack from search`,
-      )
+    if (!isDriveConnected) {
+      excludedApps.push(Apps.GoogleDrive)
+    }
+    if (!isCalendarConnected) {
+      excludedApps.push(Apps.GoogleCalendar)
+    }
+    if (!isGmailConnected) {
+      excludedApps.push(Apps.Gmail)
+    }
+    if (!isSlackConnected) {
       excludedApps.push(Apps.Slack)
     }
 
@@ -3563,7 +3572,6 @@ export class VespaService {
     sortBy = "desc",
     labels,
     timeRange,
-    isAttachmentRequired,
     participants,
     owner,
     attendees,
@@ -3575,9 +3583,7 @@ export class VespaService {
     rankProfile = SearchModes.NativeRank,
   }: SearchGoogleAppsParams): Promise<VespaSearchResponse> => {
     const appToSourceMap: Record<GoogleApps, VespaSchema | VespaSchema[]> = {
-      [GoogleApps.Gmail]: isAttachmentRequired
-        ? [mailSchema, mailAttachmentSchema]
-        : [mailSchema],
+      [GoogleApps.Gmail]: [mailSchema, mailAttachmentSchema],
       [GoogleApps.Drive]: fileSchema,
       [GoogleApps.Calendar]: eventSchema,
       [GoogleApps.Contacts]: userSchema,

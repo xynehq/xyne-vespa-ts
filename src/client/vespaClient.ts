@@ -889,6 +889,7 @@ class VespaClient {
         yql,
         hits: mailIds.length,
         maxHits: mailIds.length + 1,
+        timeout: "30s",
       }
 
       const response = await this.fetchWithRetry(url, {
@@ -1087,7 +1088,7 @@ class VespaClient {
       .from(mailSchema)
       .where(contains("userMap", sameElement(email, docId)))
       .build()
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=1&timeout=5s`
+    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=1&timeout=30s`
 
     try {
       const response = await this.fetchWithRetry(url, {
