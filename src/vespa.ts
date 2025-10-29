@@ -1480,20 +1480,48 @@ export class VespaService {
     existingRange: { to: number | null; from: number | null } | null | undefined,
     filterTimeRange: { startDate: number; endDate: number } | undefined,
   ): { to: number | null; from: number | null } | null => {
-    // If no app filter time range, return existing range
+    this.logger.info(JSON.stringify(existingRange))
+    this.logger.info(JSON.stringify(filterTimeRange))
+    
+    // Helper function to normalize timestamp to milliseconds (13 digits)
+    const normalizeTimestamp = (timestamp: number): number => {
+      const timestampStr = timestamp.toString()
+      if (timestampStr.length === 10) {
+        // Convert seconds to milliseconds
+        return timestamp * 1000
+      } else if (timestampStr.length === 13) {
+        // Already in milliseconds
+        return timestamp
+      }
+      // For other lengths, assume it's already correct
+      return timestamp
+    }
+
+    // If no app filter time range, return existing range (normalized)
     if (!filterTimeRange) {
-      return existingRange || null
+      if (!existingRange) return null
+      
+      return {
+        to: existingRange.to ? normalizeTimestamp(existingRange.to) : null,
+        from: existingRange.from ? normalizeTimestamp(existingRange.from) : null,
+      }
     }
 
-    // Extract app filter time range
+    // Extract and normalize app filter time range
     const appFilterRange: { to: number | null; from: number | null } = {
-      to: filterTimeRange.endDate || null,
-      from: filterTimeRange.startDate || null,
+      to: filterTimeRange.endDate ? normalizeTimestamp(filterTimeRange.endDate) : null,
+      from: filterTimeRange.startDate ? normalizeTimestamp(filterTimeRange.startDate) : null,
     }
 
-    // If no existing range, use only app filter range
+    // If no existing range, use only app filter range (already normalized)
     if (!existingRange || (existingRange.to === null && existingRange.from === null)) {
       return appFilterRange
+    }
+
+    // Normalize existing range
+    const normalizedExistingRange = {
+      to: existingRange.to ? normalizeTimestamp(existingRange.to) : null,
+      from: existingRange.from ? normalizeTimestamp(existingRange.from) : null,
     }
 
     // Both exist - take intersection (most restrictive range)
@@ -1503,19 +1531,19 @@ export class VespaService {
     }
 
     // For from (start): take the later/higher timestamp (more restrictive start)
-    if (existingRange.from !== null && appFilterRange.from !== null) {
-      merged.from = Math.max(existingRange.from, appFilterRange.from)
-    } else if (existingRange.from !== null) {
-      merged.from = existingRange.from
+    if (normalizedExistingRange.from !== null && appFilterRange.from !== null) {
+      merged.from = Math.max(normalizedExistingRange.from, appFilterRange.from)
+    } else if (normalizedExistingRange.from !== null) {
+      merged.from = normalizedExistingRange.from
     } else if (appFilterRange.from !== null) {
       merged.from = appFilterRange.from
     }
 
     // For to (end): take the earlier/lower timestamp (more restrictive end)
-    if (existingRange.to !== null && appFilterRange.to !== null) {
-      merged.to = Math.min(existingRange.to, appFilterRange.to)
-    } else if (existingRange.to !== null) {
-      merged.to = existingRange.to
+    if (normalizedExistingRange.to !== null && appFilterRange.to !== null) {
+      merged.to = Math.min(normalizedExistingRange.to, appFilterRange.to)
+    } else if (normalizedExistingRange.to !== null) {
+      merged.to = normalizedExistingRange.to
     } else if (appFilterRange.to !== null) {
       merged.to = appFilterRange.to
     }
