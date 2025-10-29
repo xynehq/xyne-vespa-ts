@@ -1010,7 +1010,8 @@ export class VespaService {
       searchConditions = [or(searchConditions), or(contextFilters)]
     }
 
-    const sources: VespaSchema[] = profile === SearchModes.AttachmentRank ? [fileSchema] : this.schemaSources
+    const sources: VespaSchema[] =
+      profile === SearchModes.AttachmentRank ? [fileSchema] : this.schemaSources
 
     return YqlBuilder.create({
       email,
@@ -3005,8 +3006,8 @@ export class VespaService {
       if (attendees && attendees.length > 0) {
         const attendeeConditions = attendees.map((attendee) =>
           isValidEmail(attendee)
-            ? contains("attendees", attendee)
-            : matches("attendees", attendee),
+            ? contains("attendeesNames", attendee)
+            : matches("attendeesNames", attendee),
         )
         conditions.push(or(attendeeConditions))
       }
