@@ -1,3 +1,10 @@
+## [1.2.3](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.2...v1.2.3) (2025-10-30)
+
+
+### Bug Fixes
+
+* increase timeout to avoid gateway timeout ([#44](https://github.com/xynehq/xyne-vespa-ts/issues/44)) ([b51af12](https://github.com/xynehq/xyne-vespa-ts/commit/b51af12b5493c24604b6a6cc4fdb90458375fba5))
+
 ## [1.2.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.1...v1.2.2) (2025-10-30)
 
 
