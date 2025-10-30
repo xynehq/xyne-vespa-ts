@@ -812,7 +812,7 @@ class VespaClient {
         yql,
         hits: docIds.length,
         maxHits: docIds.length + 1,
-        timeout:"30s"
+        timeout: "30s",
       }
 
       const response = await this.fetchWithRetry(url, {
