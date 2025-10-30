@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+# Function to check and fix formatting
+check_and_format() {
+    echo "🔍 Checking code formatting..."
+    
+    # Temporarily disable exit on error
+    set +e
+    
+    # Check if there are any formatting issues (exclude linting and import organization)
+    bunx @biomejs/biome check . --formatter-enabled=true --linter-enabled=false --assist-enabled=false --vcs-use-ignore-file=true
+    CHECK_STATUS=$?
+    
+    set -e
+    
+    if [ $CHECK_STATUS -ne 0 ]; then
+        echo "⚡ Formatting issues detected. Running formatter..."
+
+        # Use the project's format script as single source of truth
+        bun run format
+        
+        echo "✅ Files have been formatted."
+        echo "📝 Please review the changes and commit again."
+        exit 1
+    else
+        echo "✅ Code formatting is already correct."
+    fi
+}
+
+# Run the check and format function
+check_and_format
