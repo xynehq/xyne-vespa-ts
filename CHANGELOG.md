@@ -1,3 +1,10 @@
+## [1.2.4](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.3...v1.2.4) (2025-10-30)
+
+
+### Bug Fixes
+
+* **commits:** Added commitzen ([#45](https://github.com/xynehq/xyne-vespa-ts/issues/45)) ([58a4488](https://github.com/xynehq/xyne-vespa-ts/commit/58a4488f3beec65ef17dcbf45bfa21df7ba734bb))
+
 ## [1.2.3](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.2...v1.2.3) (2025-10-30)
 
 
