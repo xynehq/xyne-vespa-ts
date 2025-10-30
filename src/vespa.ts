@@ -867,15 +867,15 @@ export class VespaService {
           break
 
         case Apps.Gmail:
-          // Build enhanced Gmail condition with appFilters
-          const gmailFilters = appFilters[Apps.Gmail]?.[Apps.Gmail] || {}
+          // Build enhanced Gmail condition with appFilters - using new direct format
+          const gmailFilters = appFilters[Apps.Gmail] || []
           
           // Handle new multiple filters format
           const gmailFilterConditions: YqlCondition[] = []
           
-          if (gmailFilters?.filters && Array.isArray(gmailFilters.filters)) {
+          if (gmailFilters && Array.isArray(gmailFilters) && gmailFilters.length > 0) {
             // Process multiple filter groups
-            for (const filter of gmailFilters.filters) {
+            for (const filter of gmailFilters) {
               const groupConditions: YqlCondition[] = []
               
               // Build mail participant conditions for this filter group
@@ -960,11 +960,7 @@ export class VespaService {
               
               appQueries.push(and(baseConditions))
             } else {
-              // No valid filter groups, use standard condition with enhanced participants
-              const enhancedMailParticipants = this.buildEnhancedMailParticipants(
-                mailParticipants,
-                gmailFilters
-              )
+            // No valid filter groups, use standard condition
               appQueries.push(
                 this.buildGmailCondition(
                   hits,
@@ -972,16 +968,11 @@ export class VespaService {
                   entity,
                   timestampRange,
                   notInMailLabels,
-                  enhancedMailParticipants,
+                  mailParticipants,
                 ),
               )
             }
           } else {
-            // No filters provided, use standard condition with enhanced participants
-            const enhancedMailParticipants = this.buildEnhancedMailParticipants(
-              mailParticipants,
-              gmailFilters
-            )
             appQueries.push(
               this.buildGmailCondition(
                 hits,
@@ -989,7 +980,7 @@ export class VespaService {
                 entity,
                 timestampRange,
                 notInMailLabels,
-                enhancedMailParticipants,
+                mailParticipants,
               ),
             )
           }
@@ -1024,8 +1015,8 @@ export class VespaService {
           break
 
         case Apps.Slack:
-          // Build enhanced Slack condition with appFilters
-          const slackFilters = appFilters[Apps.Slack]?.[Apps.Slack] || {}
+          // Build enhanced Slack condition with appFilters - using new direct format
+          const slackFilters = appFilters[Apps.Slack] || []
           const slackChannelIds =
             (selectedItem[Apps.Slack] as string[]) || channelIds
           const channelCond = buildDocsInclusionCondition(
@@ -1035,9 +1026,9 @@ export class VespaService {
           
           // Handle new multiple filters format
           const slackFilterConditions: YqlCondition[] = []
-          if (slackFilters?.filters && Array.isArray(slackFilters.filters)) {
+          if (slackFilters && Array.isArray(slackFilters) && slackFilters.length > 0) {
             // Process multiple filter groups
-            for (const filter of slackFilters.filters) {
+            for (const filter of slackFilters) {
               const groupConditions: YqlCondition[] = []
               
               // Add senderId conditions for this filter group
@@ -2467,12 +2458,12 @@ export class VespaService {
       : []
 
     // NEW: Enhanced multiple filter logic for Gmail
-    if (includesApp(Apps.Gmail) && appFilters[Apps.Gmail]?.[Apps.Gmail]?.filters) {
-      const gmailFilters = appFilters[Apps.Gmail][Apps.Gmail]
+    if (includesApp(Apps.Gmail) && appFilters[Apps.Gmail] && Array.isArray(appFilters[Apps.Gmail])) {
+      const gmailFilters = appFilters[Apps.Gmail]
       const gmailFilterConditions: YqlCondition[] = []
       
       // Process multiple filter groups
-      for (const filter of gmailFilters.filters) {
+      for (const filter of gmailFilters) {
         const groupConditions: YqlCondition[] = []
         
         // Build mail participant conditions for this filter group
@@ -2532,11 +2523,11 @@ export class VespaService {
     }
 
     // NEW: Enhanced multiple filter logic for Slack
-    if (includesApp(Apps.Slack) && appFilters[Apps.Slack]?.[Apps.Slack]?.filters) {
-      const slackFilters = appFilters[Apps.Slack][Apps.Slack]
+    if (includesApp(Apps.Slack) && appFilters[Apps.Slack] && Array.isArray(appFilters[Apps.Slack])) {
+      const slackFilters = appFilters[Apps.Slack]
       const slackFilterConditions: YqlCondition[] = []
       
-      for (const filter of slackFilters.filters) {
+      for (const filter of slackFilters) {
         const groupConditions: YqlCondition[] = []
         
         // Add senderId conditions for this filter group
