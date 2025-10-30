@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.1...v1.2.2) (2025-10-30)
+
+
+### Reverts
+
+* Revert "increase timeout to avoid gateway timeout ([#42](https://github.com/xynehq/xyne-vespa-ts/issues/42))" ([#43](https://github.com/xynehq/xyne-vespa-ts/issues/43)) ([4906581](https://github.com/xynehq/xyne-vespa-ts/commit/490658184cdbba6b88cccc0d1600c1343885d30b))
+
 ## [1.2.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.0...v1.2.1) (2025-10-29)
 
 
