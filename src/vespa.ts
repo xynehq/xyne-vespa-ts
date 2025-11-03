@@ -854,7 +854,7 @@ export class VespaService {
     driveIds: string[] = [],
     selectedItem: Record<string, unknown> = {},
     email?: string,
-    appFilters: any = {},
+    appFilters: Partial<Record<Apps, AppFilter[]>> = {},
   ): YqlProfile => {
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
