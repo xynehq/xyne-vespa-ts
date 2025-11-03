@@ -41,6 +41,7 @@ import type {
   MailParticipant,
   EventStatusType,
   SearchGoogleAppsParams,
+  AppFilter,
 } from "./types"
 import { SearchModes } from "./types"
 import {
@@ -51,6 +52,7 @@ import {
   getGmailParticipantsConditions,
   isValidEmail,
   isValidTimestampRange,
+  normalizeTimestamp,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
 import { And, Or, FuzzyContains } from "./yql/conditions"
@@ -907,7 +909,7 @@ export class VespaService {
               }
               
               // Merge filter participants with existing mailParticipants
-              const enhancedParticipants = this.buildEnhancedMailParticipants(
+              const enhancedParticipants = this.buildIntersectionMailParticipants(
                 mailParticipants,
                 { ...filterParticipants }
               )
@@ -1431,7 +1433,7 @@ export class VespaService {
   // Helper function to build enhanced mail participants from individual filter
   // Uses intersection logic: if both existing and filter participants exist, take intersection
   // If only one exists, use that one
-  private buildEnhancedMailParticipants = (
+  private buildIntersectionMailParticipants = (
     existingParticipants: MailParticipant | null,
     filterParticipants: MailParticipant,
   ): MailParticipant | null => {
@@ -1502,18 +1504,7 @@ export class VespaService {
     this.logger.info(JSON.stringify(filterTimeRange))
     
     // Helper function to normalize timestamp to milliseconds (13 digits)
-    const normalizeTimestamp = (timestamp: number): number => {
-      const timestampStr = timestamp.toString()
-      if (timestampStr.length === 10) {
-        // Convert seconds to milliseconds
-        return timestamp * 1000
-      } else if (timestampStr.length === 13) {
-        // Already in milliseconds
-        return timestamp
-      }
-      // For other lengths, assume it's already correct
-      return timestamp
-    }
+    
 
     // If no app filter time range, return existing range (normalized)
     if (!filterTimeRange) {
@@ -2428,7 +2419,7 @@ export class VespaService {
   // }
 
   getItems = async (params: GetItemsParams & { 
-    appFilters?: any,
+    appFilters?: Partial<Record<Apps, AppFilter[]>>,
   }): Promise<VespaSearchResponse> => {
     const {
       schema,
@@ -2491,7 +2482,7 @@ export class VespaService {
         }
         
         // Merge filter participants with existing mailParticipants
-        const enhancedParticipants = this.buildEnhancedMailParticipants(
+        const enhancedParticipants = this.buildIntersectionMailParticipants(
           mailParticipants || null,
           { ...filterParticipants }
         )
@@ -2583,7 +2574,7 @@ export class VespaService {
       includesApp(Apps.Slack) &&
       slackChannelIds &&
       slackChannelIds.length > 0 &&
-      !appFilters[Apps.Slack]?.[Apps.Slack]?.filters // Only apply if no enhanced filters
+      !appFilters[Apps.Slack] // Only apply if no enhanced filters
     ) {
       if (!schemas.includes(chatMessageSchema)) schemas.push(chatMessageSchema)
       const channelIdConditions = slackChannelIds.map((id) =>
@@ -3424,7 +3415,7 @@ export class VespaService {
         yql,
         query: trimmedIdentifier,
         hits: limit,
-        "ranking.profile": "default_bm25",
+        "ranking.profile": SearchModes.BM25,
         timeout: "10s",
       }
 
