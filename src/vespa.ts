@@ -3389,7 +3389,7 @@ export class VespaService {
         "ranking.profile": "unranked",
         timeout: "15s",
       }
-      console.log(yql)
+      // console.log(yql)
 
       this.logger.info(
         `Fetching all Slack ${config.entityName}s (page ${Math.floor(offset / limit) + 1})`,
@@ -3684,10 +3684,10 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.build()
-    console.log(
-      "Vespa YQL Query in searchGoogleApps: ",
-      formatYqlToReadable(yql),
-    )
+    // console.log(
+    //   "Vespa YQL Query in searchGoogleApps: ",
+    //   formatYqlToReadable(yql),
+    // )
     const searchPayload = {
       yql: yql,
       ...(query
