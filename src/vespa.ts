@@ -1693,7 +1693,7 @@ export class VespaService {
       excludedApps,
       email,
     )
-    console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2037,7 +2037,7 @@ export class VespaService {
       appFilters, // Pass appFilters to the profile builder
     )
 
-    console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2742,7 +2742,7 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.offset(offset ?? 0).build()
-    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] Query Details:`, {
       schema,
       app,
