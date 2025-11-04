@@ -123,3 +123,16 @@ export function isValidTimestampRange(
     !!range && (typeof range.from === "number" || typeof range.to === "number")
   )
 }
+
+export const normalizeTimestamp = (timestamp: number): number => {
+  const timestampStr = timestamp.toString()
+  if (timestampStr.length === 10) {
+    // Convert seconds to milliseconds
+    return timestamp * 1000
+  } else if (timestampStr.length === 13) {
+    // Already in milliseconds
+    return timestamp
+  }
+  // For other lengths, assume it's already correct
+  return timestamp
+}

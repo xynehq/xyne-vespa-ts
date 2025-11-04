@@ -1601,6 +1601,23 @@ export type CollectionVespaIds = {
   collectionFileIds?: string[]
 }
 
+export interface AppFilter {
+  id: number // Numeric identifier for this filter
+  // Gmail-specific filters
+  from?: string[]
+  to?: string[]
+  cc?: string[]
+  bcc?: string[]
+  // Slack-specific filters
+  senderId?: string[]
+  channelId?: string[]
+  // Common filters
+  timeRange?: {
+    startDate: number
+    endDate: number
+  }
+}
+
 export type VespaQueryConfig = {
   limit: number
   offset: number
@@ -1625,6 +1642,7 @@ export type VespaQueryConfig = {
   processedCollectionSelections?: CollectionVespaIds
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?: Partial<Record<Apps, string[]>>
+  appFilters?: Partial<Record<Apps, AppFilter[]>>
   isSlackConnected?: boolean
   isDriveConnected?: boolean
   isGmailConnected?: boolean
