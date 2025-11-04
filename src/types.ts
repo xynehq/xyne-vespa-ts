@@ -1670,16 +1670,21 @@ export interface GetItemsParams {
   selectedItem?: Partial<Record<Apps, string[]>>
 }
 
-export interface GetThreadItemsParams {
-  entity?: Entity | null
+export interface SearchSlackParams {
   timestampRange?: { from: any; to: any } | null
   limit?: number
   offset?: number
   email: string
-  userEmail?: string
+  user?: string
   asc?: boolean
   channelName?: string
   filterQuery?: string
+  agentChannelIds?: string[] // Added for agent-specific channel filtering
+  channelIds?: string[]
+  userIds?: string[]
+  excludeDocIds?: string[]
+  mentions?: string[]
+  rankProfile?: SearchModes
 }
 
 /**

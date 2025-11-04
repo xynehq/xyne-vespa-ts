@@ -19,7 +19,7 @@ import {
   chatUserSchema,
   mailSchema,
 } from "../types"
-import { getErrorMessage } from "../utils"
+import { getErrorMessage, isValidEmail } from "../utils"
 import { handleVespaGroupResponse } from "../mappers"
 import type { ILogger } from "../types"
 import { YqlBuilder } from "../yql/yqlBuilder"
@@ -1275,16 +1275,30 @@ class VespaClient {
     }
   }
 
-  async getChatUserByEmail(email: string): Promise<VespaSearchResponse> {
+  async searchChatUser(
+    email: string,
+    user: string | string[],
+  ): Promise<VespaSearchResponse> {
     // For user lookup, we typically want to bypass permissions since we're looking up user records directly
-    const yql = YqlBuilder.create({
+    const yqlBuilder = YqlBuilder.create({
       email: email,
       requirePermissions: false,
     })
       .select()
       .from(chatUserSchema)
-      .where(contains("email", email))
-      .build()
+
+    if (Array.isArray(user)) {
+      const userConditions = user.map((u) =>
+        isValidEmail(u) ? contains("email", u) : matches("name", u),
+      )
+      yqlBuilder.where(or(userConditions))
+    } else {
+      yqlBuilder.where(
+        isValidEmail(user) ? contains("email", user) : matches("name", user),
+      )
+    }
+
+    const yql = yqlBuilder.build()
 
     const url = `${this.vespaEndpoint}/search/`
     try {
@@ -1315,39 +1329,74 @@ class VespaClient {
     }
   }
 
-  async getChatContainerIdByChannelName(
+  async searchSlackChannelByName(
+    email: string,
     channelName: string,
   ): Promise<VespaSearchResponse> {
-    const yql = YqlBuilder.create({ requirePermissions: false })
-      .select("docId")
-      .from(chatContainerSchema)
-      .where(contains("name", channelName))
-      .build()
-
-    const url = `${this.vespaEndpoint}/search/`
     try {
-      const payload = {
-        yql,
-      }
-      console.log(yql)
+      // first will try exact match
+      const exactYql = YqlBuilder.create({ requirePermissions: true, email })
+        .select("docId")
+        .from(chatContainerSchema)
+        .where(contains("name", channelName))
+        .build()
 
-      const response = await this.fetchWithRetry(url, {
+      const url = `${this.vespaEndpoint}/search/`
+      const exactPayload = {
+        yql: exactYql,
+      }
+
+      const exactResponse = await this.fetchWithRetry(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(exactPayload),
       })
 
-      if (!response.ok) {
-        const errorText = response.statusText
+      if (!exactResponse.ok) {
+        const errorText = exactResponse.statusText
         throw new Error(
-          `Search query failed: ${response.status} ${response.statusText} - ${errorText}`,
+          `Search query failed: ${exactResponse.status} ${exactResponse.statusText} - ${errorText}`,
         )
       }
 
-      const result = (await response.json()) as VespaSearchResponse
-      return result
+      const exactResult = (await exactResponse.json()) as VespaSearchResponse
+
+      // If exact search found results, return them
+      if (exactResult.root?.children && exactResult.root.children.length > 0) {
+        return exactResult
+      }
+
+      // If no exact match found, try partial search
+      const partialYql = YqlBuilder.create({ requirePermissions: true, email })
+        .select("docId")
+        .from(chatContainerSchema)
+        .where(matches("name", channelName))
+        .build()
+
+      const partialPayload = {
+        yql: partialYql,
+      }
+
+      const partialResponse = await this.fetchWithRetry(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(partialPayload),
+      })
+
+      if (!partialResponse.ok) {
+        const errorText = partialResponse.statusText
+        throw new Error(
+          `Partial search query failed: ${partialResponse.status} ${partialResponse.statusText} - ${errorText}`,
+        )
+      }
+
+      const partialResult =
+        (await partialResponse.json()) as VespaSearchResponse
+      return partialResult
     } catch (error) {
       const errMessage = getErrorMessage(error)
       throw new Error(
