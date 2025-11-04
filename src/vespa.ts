@@ -3324,7 +3324,9 @@ export class VespaService {
     }
   }
 
-
+// Fetch Slack entities to list the channel name or users of slack
+// No permissions check when listing or searching the slack User because we don't have permissions fields in that
+// But while fetching slack channels we are adding the permission check
   private fetchSlackEntities = async (
     entity: SlackEntity.User | SlackEntity.Channel,
     identifier: string | null | undefined,
@@ -3384,7 +3386,7 @@ export class VespaService {
         `Fetching all Slack ${config.entityName}s (page ${Math.floor(offset / limit) + 1})`,
       )
     } else {
-      // BM25 text search only - no permissions for Slack entities
+      // BM25 text search only 
       yql = YqlBuilder.create(
         {
           sources: [config.schema],
