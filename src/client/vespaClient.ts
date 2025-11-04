@@ -1287,7 +1287,7 @@ class VespaClient {
       .select()
       .from(chatUserSchema)
       .where(
-        isValidEmail(user) ? contains("email", email) : matches("name", user),
+        isValidEmail(user) ? contains("email", user) : matches("name", user),
       )
       .build()
 
@@ -1359,8 +1359,8 @@ class VespaClient {
         return exactResult
       }
 
-      // If no exact match found, try partial search with matches
-      const partialYql = YqlBuilder.create({ requirePermissions: false })
+      // If no exact match found, try partial search
+      const partialYql = YqlBuilder.create({ requirePermissions: true, email })
         .select("docId")
         .from(chatContainerSchema)
         .where(matches("name", channelName))

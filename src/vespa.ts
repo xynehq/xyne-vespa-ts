@@ -2579,9 +2579,6 @@ export class VespaService {
       offset,
     } = params
 
-    // Note: channelIds and userIds are not in SearchSlackParams,
-    // so we'll handle them differently in the calling function
-
     const conditions: YqlCondition[] = query
       ? [
           or([
@@ -2599,7 +2596,6 @@ export class VespaService {
       )
     }
 
-    if (entity) conditions.push(contains("entity", entity))
     if (channelIds) {
       if (channelIds.length === 1 && channelIds[0]) {
         conditions.push(contains("channelId", channelIds[0]))
@@ -2622,10 +2618,11 @@ export class VespaService {
         conditions.push(contains("channelId", agentSelectedChannelIds[0]))
       } else {
         conditions.push(
-          and(agentSelectedChannelIds.map((id) => contains("channelId", id))),
+          or(agentSelectedChannelIds.map((id) => contains("channelId", id))),
         )
       }
     }
+
     if (mentions && mentions.length > 0) {
       if (mentions.length === 1 && mentions[0]) {
         conditions.push(matches("mentions", mentions[0]))
