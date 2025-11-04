@@ -2012,7 +2012,7 @@ export class VespaService {
       appFilters, // Pass appFilters to the profile builder
     )
 
-    console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
+    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
