@@ -313,10 +313,10 @@ export const VespaSearchResponseToSearchResult = (
             if (!fields.description) {
               fields.description = ""
             }
-            if(!fields.name){
+            if (!fields.name) {
               fields.name = ""
             }
-            if(!fields.channelName){
+            if (!fields.channelName) {
               fields.channelName = ""
             }
 

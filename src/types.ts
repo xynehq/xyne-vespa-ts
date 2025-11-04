@@ -1642,7 +1642,7 @@ export type VespaQueryConfig = {
   processedCollectionSelections?: CollectionVespaIds
   driveIds?: string[] // Added for agent-specfic googleDrive docIds filtering
   selectedItem?: Partial<Record<Apps, string[]>>
-  appFilters?: Partial<Record<Apps, AppFilter[]>> 
+  appFilters?: Partial<Record<Apps, AppFilter[]>>
   isSlackConnected?: boolean
   isDriveConnected?: boolean
   isGmailConnected?: boolean
