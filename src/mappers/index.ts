@@ -314,10 +314,10 @@ export const VespaSearchResponseToSearchResult = (
               fields.description = ""
             }
             if(!fields.name){
-              fields.name = fields.docId
+              fields.name = ""
             }
             if(!fields.channelName){
-              fields.channelName = fields.docId
+              fields.channelName = ""
             }
 
             return ChatContainerResponseSchema.parse(fields)

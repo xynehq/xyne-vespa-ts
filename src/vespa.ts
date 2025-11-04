@@ -960,8 +960,9 @@ export class VespaService {
                 gmailFilterConditions.push(and(groupConditions))
               }
             }
+            }
             
-            // Build condition using multiple filter groups (OR between groups)
+            // Build final Gmail condition - either enhanced or standard
             if (gmailFilterConditions.length > 0) {
               const baseConditions = [
                 or([
@@ -975,7 +976,7 @@ export class VespaService {
               
               appQueries.push(and(baseConditions))
             } else {
-            // No valid filter groups, use standard condition
+              // No valid filter groups, use standard condition
               appQueries.push(
                 this.buildGmailCondition(
                   hits,
@@ -987,22 +988,9 @@ export class VespaService {
                 ),
               )
             }
-          } else {
-            appQueries.push(
-              this.buildGmailCondition(
-                hits,
-                app,
-                entity,
-                timestampRange,
-                notInMailLabels,
-                mailParticipants,
-              ),
-            )
-          }
-          
-          sources.add(mailSchema)
-          break
-
+            
+            sources.add(mailSchema)
+            break
         case Apps.GoogleDrive:
           const driveIdsCond = buildDocsInclusionCondition("docId", driveIds)
           appQueries.push(
@@ -1082,9 +1070,10 @@ export class VespaService {
               if (groupConditions.length > 0) {
                 slackFilterConditions.push(and(groupConditions))
               }
+              }
             }
             
-            // Build condition using multiple filter groups (OR between groups)
+            // Build final Slack condition - either enhanced or standard
             if (slackFilterConditions.length > 0) {
               const baseConditions = [
                 or([
@@ -1115,26 +1104,12 @@ export class VespaService {
                 ),
               )
             }
-          } else {
-            // No filters provided, use standard condition
-            appQueries.push(
-              this.buildEnhancedSlackCondition(
-                hits,
-                app,
-                entity,
-                timestampRange,
-                channelCond,
-                undefined,
-              ),
-            )
-          }
-          
-          sources
-            .add(chatUserSchema)
-            .add(chatMessageSchema)
-            .add(chatContainerSchema)
-          break
-
+            
+            sources
+              .add(chatUserSchema)
+              .add(chatMessageSchema)
+              .add(chatContainerSchema)
+            break
         case Apps.DataSource:
           appQueries.push(this.buildDataSourceFileYQL(hits, selectedItem))
           sources.add(dataSourceFileSchema)
@@ -2037,7 +2012,7 @@ export class VespaService {
       appFilters, // Pass appFilters to the profile builder
     )
 
-    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
+    console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
