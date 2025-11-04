@@ -1,3 +1,11 @@
+## [1.2.5](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.4...v1.2.5) (2025-11-04)
+
+
+### Bug Fixes
+
+* **agent filter:** Add yql support for multiple filters of same app ([#40](https://github.com/xynehq/xyne-vespa-ts/issues/40)) ([af0c350](https://github.com/xynehq/xyne-vespa-ts/commit/af0c350a1fb5bcad74c497307ad06881f39e0013))
+* **format:** format files ([#47](https://github.com/xynehq/xyne-vespa-ts/issues/47)) ([569d9b4](https://github.com/xynehq/xyne-vespa-ts/commit/569d9b422c7aaf0898454f3b15ff70bca32a8fff))
+
 ## [1.2.4](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.3...v1.2.4) (2025-10-30)
 
 
