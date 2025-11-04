@@ -44,6 +44,7 @@ import type {
   VespaChatMessage,
   VespaChatUser,
   AppFilter,
+  VespaChatContainer,
 } from "./types"
 import { SearchModes } from "./types"
 import {
@@ -3250,8 +3251,8 @@ export class VespaService {
       mentions,
     } = params
 
-    let channelId: string[] | undefined
-    let userId: string[] | undefined
+    let channelIds: string[] | undefined
+    let userIds: string[] | undefined
     let agentSelectedChannelIds: string[] | undefined = params.agentChannelIds
     // Fetch channelId
     if (channelName) {
@@ -3262,8 +3263,8 @@ export class VespaService {
         )) as VespaSearchResponse
         if (resp?.root?.children?.length > 0) {
           const results = resp.root.children
-          channelId = results
-            .map((child) => (child.fields as VespaChatMessage).docId)
+          channelIds = results
+            .map((child) => (child.fields as VespaChatContainer).docId)
             .filter(Boolean)
         }
       } catch (e) {
@@ -3284,7 +3285,7 @@ export class VespaService {
         if (resp?.root?.children?.length > 0) {
           const results = resp.root.children
           if (results.length > 0) {
-            userId = results
+            userIds = results
               .map((child) => (child.fields as VespaChatUser).docId)
               .filter(Boolean)
           }
@@ -3328,15 +3329,15 @@ export class VespaService {
       email: email!,
       asc,
       mentions: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
-      channelIds: channelId,
-      userIds: userId,
+      channelIds,
+      userIds,
       agentChannelIds: agentSelectedChannelIds,
       offset,
     })
-    console.log(
-      "Vespa YQL Query in searchSlackMessages: ",
-      formatYqlToReadable(yql),
-    )
+    // console.log(
+    //   "Vespa YQL Query in searchSlackMessages: ",
+    //   formatYqlToReadable(yql),
+    // )
     if (!yql || yql.trim() === "") {
       return vespaEmptyResponse()
     }
