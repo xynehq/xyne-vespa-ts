@@ -337,9 +337,18 @@ export class VespaService {
     owner?: string | string[] | null,
     attendees?: string[] | null,
     eventStatus?: EventStatusType | null,
+    processedCollectionSelections?: CollectionVespaIds | null,
   ): YqlProfile => {
     try {
       const availableSources = this.getAvailableSources(excludedApps)
+      if (
+        processedCollectionSelections &&
+        Object.keys(processedCollectionSelections).length > 0
+      ) {
+        if (!availableSources.includes(KbItemsSchema)) {
+          availableSources.push(KbItemsSchema)
+        }
+      }
       const includedApps = this.getIncludedApps(excludedApps)
 
       const appQueries = this.buildAppSpecificQueries(
@@ -355,6 +364,19 @@ export class VespaService {
         eventStatus,
       )
 
+      let kbAppQuery: YqlCondition | null = null
+      if (
+        includedApps.includes(Apps.KnowledgeBase) &&
+        processedCollectionSelections
+      ) {
+        const collectionConds = this.buildCollectionConditions(
+          processedCollectionSelections,
+        )
+        if (collectionConds.length > 0) {
+          kbAppQuery = this.buildCollectionFileYQL(hits, collectionConds)
+        }
+      }
+
       const yqlBuilder = YqlBuilder.create({
         email: userEmail,
         requirePermissions: true,
@@ -364,7 +386,9 @@ export class VespaService {
 
       yqlBuilder.from(availableSources)
       if (appQueries.length > 0) {
-        const combinedCondition = or(appQueries)
+        const combinedCondition = kbAppQuery
+          ? Or.withoutPermissions([or(appQueries), kbAppQuery])
+          : or(appQueries)
         if (!app && !entity) {
           combinedCondition.and(this.getExcludeAttachmentCondition())
         }
@@ -1769,6 +1793,7 @@ export class VespaService {
       owner = null,
       attendees = null,
       eventStatus = null,
+      processedCollectionSelections = {},
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Filter out attachment app and entities if present
@@ -1798,6 +1823,7 @@ export class VespaService {
       owner,
       attendees,
       eventStatus,
+      processedCollectionSelections,
     })
   }
 
@@ -1828,6 +1854,7 @@ export class VespaService {
       owner = null,
       attendees = null,
       eventStatus = null,
+      processedCollectionSelections,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1864,6 +1891,7 @@ export class VespaService {
       owner,
       attendees,
       eventStatus,
+      processedCollectionSelections,
     )
     // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
