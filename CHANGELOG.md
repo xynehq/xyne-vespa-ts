@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.5...v1.3.0) (2025-11-04)
+
+
+### Features
+
+* included all public agents kb files of a workspace in search ([#48](https://github.com/xynehq/xyne-vespa-ts/issues/48)) ([04f0f65](https://github.com/xynehq/xyne-vespa-ts/commit/04f0f65e0f5c3e64a5e1f762616ea13a512389ce))
+
 ## [1.2.5](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.4...v1.2.5) (2025-11-04)
 
 
