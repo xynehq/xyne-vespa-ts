@@ -1277,19 +1277,28 @@ class VespaClient {
 
   async searchChatUser(
     email: string,
-    user: string,
+    user: string | string[],
   ): Promise<VespaSearchResponse> {
     // For user lookup, we typically want to bypass permissions since we're looking up user records directly
-    const yql = YqlBuilder.create({
+    const yqlBuilder = YqlBuilder.create({
       email: email,
       requirePermissions: false,
     })
       .select()
       .from(chatUserSchema)
-      .where(
+
+    if (Array.isArray(user)) {
+      const userConditions = user.map((u) =>
+        isValidEmail(u) ? contains("email", u) : matches("name", u),
+      )
+      yqlBuilder.where(or(userConditions))
+    } else {
+      yqlBuilder.where(
         isValidEmail(user) ? contains("email", user) : matches("name", user),
       )
-      .build()
+    }
+
+    const yql = yqlBuilder.build()
 
     const url = `${this.vespaEndpoint}/search/`
     try {

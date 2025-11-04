@@ -1,5 +1,5 @@
 import { int } from "zod"
-import type { ILogger, MailParticipant } from "../types"
+import type { ILogger, MailParticipant, VespaSearchResponse } from "../types"
 import { YqlCondition } from "../yql/types"
 import { contains, matches, or } from "../yql"
 
@@ -135,4 +135,22 @@ export const normalizeTimestamp = (timestamp: number): number => {
   }
   // For other lengths, assume it's already correct
   return timestamp
+}
+
+export const vespaEmptyResponse = (): VespaSearchResponse => {
+  return {
+    root: {
+      id: "empty_ID",
+      relevance: 0,
+      coverage: {
+        coverage: 0,
+        documents: 0,
+        full: true,
+        nodes: 0,
+        results: 0,
+        resultsFull: 0,
+      },
+      children: [],
+    },
+  }
 }

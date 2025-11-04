@@ -55,6 +55,7 @@ import {
   isValidEmail,
   isValidTimestampRange,
   normalizeTimestamp,
+  vespaEmptyResponse,
 } from "./utils"
 import { YqlBuilder } from "./yql/yqlBuilder"
 import { And, Or, FuzzyContains } from "./yql/conditions"
@@ -3160,17 +3161,28 @@ export class VespaService {
 
     if (mentions && mentions.length > 0) {
       if (mentions.length === 1 && mentions[0]) {
-        conditions.push(matches("mentions", mentions[0]))
+        conditions.push(contains("mentions", mentions[0]))
       } else {
         conditions.push(
-          or(mentions.map((mention) => matches("mentions", mention))),
+          or(mentions.map((mention) => contains("mentions", mention))),
         )
       }
     }
+
+    if (!conditions.length) {
+      return { yql: "" } as YqlProfile
+    }
+
     const yqlBuilder = YqlBuilder.create({ email, requirePermissions: true })
       .from(chatMessageSchema)
       .where(and(conditions))
-      .orderBy("updatedAt", asc ? "asc" : "desc")
+
+    // TODO: Improve ordering for query-based searches
+    // currently getting error as
+    // "Sorting is not supported with global phase" when using both query and nn search
+    if (!query) {
+      yqlBuilder.orderBy("updatedAt", asc ? "asc" : "desc")
+    }
 
     if (offset) {
       yqlBuilder.offset(offset)
@@ -3191,22 +3203,7 @@ export class VespaService {
 
     if (validThreadIds.length === 0) {
       this.logger.warn("SearchVespaThreads called with no valid threadIds.")
-      return {
-        root: {
-          id: "nullss",
-          relevance: 0,
-          fields: { totalCount: 0 },
-          coverage: {
-            coverage: 0,
-            documents: 0,
-            full: true,
-            nodes: 0,
-            results: 0,
-            resultsFull: 0,
-          },
-          children: [],
-        },
-      }
+      return vespaEmptyResponse()
     }
 
     return this.vespa.getDocumentsBythreadId(validThreadIds).catch((error) => {
@@ -3297,6 +3294,30 @@ export class VespaService {
       }
     }
 
+    let mentionedUserIds: string[] = []
+    if (mentions && mentions.length > 0) {
+      try {
+        const resp = (await this.vespa.searchChatUser(
+          email,
+          mentions,
+        )) as VespaSearchResponse
+        const results = resp?.root?.children
+        if (results?.length > 0) {
+          const maxMentions = Math.min(results.length, mentions.length)
+          // Map mentions to user IDs
+          mentionedUserIds = results
+            .map((child) => (child.fields as VespaChatUser).docId)
+            .filter(Boolean)
+            .slice(0, maxMentions)
+        }
+      } catch (e) {
+        this.logger.error(
+          `Could not fetch userId for mentions: ${mentions.join(", ")}`,
+          e,
+        )
+      }
+    }
+
     // Hybrid filterQuery-based search
     const { yql, profile } = this.SlackHybridProfile({
       hits: limit,
@@ -3306,27 +3327,31 @@ export class VespaService {
       timestampRange,
       email: email!,
       asc,
-      mentions,
+      mentions: mentionedUserIds.length > 0 ? mentionedUserIds : undefined,
       channelIds: channelId,
       userIds: userId,
       agentChannelIds: agentSelectedChannelIds,
       offset,
     })
+    console.log(
+      "Vespa YQL Query in searchSlackMessages: ",
+      formatYqlToReadable(yql),
+    )
+    if (!yql || yql.trim() === "") {
+      return vespaEmptyResponse()
+    }
 
     const hybridPayload = {
       yql,
       query: filterQuery,
       email: email,
-      "ranking.profile": profile,
+      "ranking.profile": filterQuery ? profile : "unranked",
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": 0.5,
       "input.query(recency_decay_rate)": 0.1,
-      maxHits: limit,
       hits: limit,
       timeout: "20s",
       ...(offset && { offset }),
-      ...(channelId && { channelId }),
-      ...(userId && { userId }),
     }
 
     try {
