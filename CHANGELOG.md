@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.3.0...v1.3.1) (2025-11-04)
+
+
+### Bug Fixes
+
+* **slack:** Fix slack search ([#46](https://github.com/xynehq/xyne-vespa-ts/issues/46)) ([133ac77](https://github.com/xynehq/xyne-vespa-ts/commit/133ac7794b31388ef74a0f54f26bc287cd133a83))
+
 # [1.3.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.2.5...v1.3.0) (2025-11-04)
 
 
