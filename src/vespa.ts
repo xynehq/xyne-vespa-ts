@@ -1448,49 +1448,49 @@ export class VespaService {
     }
 
     // Both exist - take intersection
-    const enhanced: MailParticipant = {}
+    const intersectedParticipants: MailParticipant = {}
 
     if (existingParticipants.from && filterParticipants.from) {
-      enhanced.from = existingParticipants.from.filter(email => 
+      intersectedParticipants.from = existingParticipants.from.filter(email => 
         filterParticipants.from!.includes(email)
       )
     } else if (existingParticipants.from) {
-      enhanced.from = existingParticipants.from
+      intersectedParticipants.from = existingParticipants.from
     } else if (filterParticipants.from) {
-      enhanced.from = filterParticipants.from
+      intersectedParticipants.from = filterParticipants.from
     }
 
     if (existingParticipants.to && filterParticipants.to) {
-      enhanced.to = existingParticipants.to.filter(email => 
+      intersectedParticipants.to = existingParticipants.to.filter(email => 
         filterParticipants.to!.includes(email)
       )
     } else if (existingParticipants.to) {
-      enhanced.to = existingParticipants.to
+      intersectedParticipants.to = existingParticipants.to
     } else if (filterParticipants.to) {
-      enhanced.to = filterParticipants.to
+      intersectedParticipants.to = filterParticipants.to
     }
 
     if (existingParticipants.cc && filterParticipants.cc) {
-      enhanced.cc = existingParticipants.cc.filter(email => 
+      intersectedParticipants.cc = existingParticipants.cc.filter(email => 
         filterParticipants.cc!.includes(email)
       )
     } else if (existingParticipants.cc) {
-      enhanced.cc = existingParticipants.cc
+      intersectedParticipants.cc = existingParticipants.cc
     } else if (filterParticipants.cc) {
-      enhanced.cc = filterParticipants.cc
+      intersectedParticipants.cc = filterParticipants.cc
     }
 
     if (existingParticipants.bcc && filterParticipants.bcc) {
-      enhanced.bcc = existingParticipants.bcc.filter(email => 
+      intersectedParticipants.bcc = existingParticipants.bcc.filter(email => 
         filterParticipants.bcc!.includes(email)
       )
     } else if (existingParticipants.bcc) {
-      enhanced.bcc = existingParticipants.bcc
+      intersectedParticipants.bcc = existingParticipants.bcc
     } else if (filterParticipants.bcc) {
-      enhanced.bcc = filterParticipants.bcc
+      intersectedParticipants.bcc = filterParticipants.bcc
     }
 
-    return Object.keys(enhanced).length === 0 ? null : enhanced
+    return Object.keys(intersectedParticipants).length === 0 ? null : intersectedParticipants
   }
 
   // Helper function to merge timestamp ranges
@@ -3307,7 +3307,6 @@ export class VespaService {
         requestingUserEmail,
         limit,
         offset,
-        true // Use semantic search
       )
     } catch (error) {
       const isListAll = !identifier || identifier.trim().length === 0
@@ -3325,23 +3324,13 @@ export class VespaService {
     }
   }
 
-  /**
-   * Generic function to fetch Slack entities (users or channels) with semantic search
-   * @param entity - The Slack entity type (SlackEntity.User or SlackEntity.Channel)
-   * @param identifier - Search identifier (email/name for users, channel name for channels). If empty, returns all with pagination
-   * @param requestingUserEmail - Email of the user making the request
-   * @param limit - Number of results to return
-   * @param offset - Offset for pagination (used when identifier is empty)
-   * @param useSemanticSearch - Whether to use semantic search for specific queries (default: true)
-   * @returns Promise<VespaSearchResponse> containing the matching Slack entities
-   */
+
   private fetchSlackEntities = async (
     entity: SlackEntity.User | SlackEntity.Channel,
     identifier: string | null | undefined,
     requestingUserEmail: string,
     limit: number,
     offset: number = 0,
-    useSemanticSearch: boolean = true,
   ): Promise<VespaSearchResponse> => {
     const isListAll = !identifier || identifier.trim().length === 0
     const trimmedIdentifier = identifier?.trim() || ""
@@ -3387,7 +3376,6 @@ export class VespaService {
         yql,
         hits: limit,
         offset,
-        "ranking.profile": "unranked",
         timeout: "15s",
       }
       // console.log(yql)
