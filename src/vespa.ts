@@ -3371,13 +3371,14 @@ export class VespaService {
     let searchPayload: any
 
     if (isListAll) {
-      // List all entities with pagination - no permissions for Slack entities
+      // List all entities with pagination
       yql = YqlBuilder.create({
         sources:[config.schema],
-        requirePermissions:false
+        requirePermissions: (entity == SlackEntity.Channel)? true : false,
+        email: (entity == SlackEntity.Channel) ? requestingUserEmail : undefined
       })
         .from(config.schema)
-        .where(contains("app", Apps.Slack))
+        .where(and([contains("app", Apps.Slack),contains('entity',entity)]))
         .limit(limit)
         .offset(offset)
         .build()
@@ -3398,8 +3399,9 @@ export class VespaService {
       // BM25 text search only - no permissions for Slack entities
       yql = YqlBuilder.create(
         {
-          requirePermissions:false,
-          sources: [config.schema]
+          sources: [config.schema],
+          requirePermissions: (entity == SlackEntity.Channel)?true :false,
+          email: (entity == SlackEntity.Channel) ? requestingUserEmail : undefined
         }
       )
         .from(config.schema)
