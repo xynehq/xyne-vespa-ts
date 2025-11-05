@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.3.1...v1.4.0) (2025-11-05)
+
+
+### Features
+
+* **parentThreadId:** Add parentThreadId field in mailSchema ([#49](https://github.com/xynehq/xyne-vespa-ts/issues/49)) ([d32a6a8](https://github.com/xynehq/xyne-vespa-ts/commit/d32a6a8450b48150136bdb5efdd4e12c70dbb4b9))
+
 ## [1.3.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.3.0...v1.3.1) (2025-11-04)
 
 
