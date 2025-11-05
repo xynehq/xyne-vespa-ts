@@ -1,3 +1,11 @@
+## [1.4.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.0...v1.4.1) (2025-11-05)
+
+
+### Bug Fixes
+
+* **release:** add check for formatting ([#50](https://github.com/xynehq/xyne-vespa-ts/issues/50)) ([f106970](https://github.com/xynehq/xyne-vespa-ts/commit/f1069700319ff5a6818a54c3260bc13ebd611c87))
+* **release:** Fix formatting on release ([#51](https://github.com/xynehq/xyne-vespa-ts/issues/51)) ([c7ea437](https://github.com/xynehq/xyne-vespa-ts/commit/c7ea437a61315568de433e18228cecd9e9b3b592))
+
 # [1.4.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.3.1...v1.4.0) (2025-11-05)
 
 
