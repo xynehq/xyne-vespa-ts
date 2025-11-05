@@ -435,6 +435,10 @@ export class YqlBuilder {
 
     // group by clause will always have last precedence
     if (this.groupByClause) {
+
+
+
+      
       yql += ` | ${this.groupByClause}`
     }
 
