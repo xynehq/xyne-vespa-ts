@@ -67,6 +67,16 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Check formatting
+        run: |
+          echo "🔍 Checking code formatting..."
+          if ! bunx biome format --check .; then
+            echo "❌ Code formatting check failed!"
+            echo "Please run 'bun run format' to fix formatting issues before releasing."
+            exit 1
+          fi
+          echo "✅ Code formatting is correct!"
+
       - name: Run tests
         run: bun test test
 
