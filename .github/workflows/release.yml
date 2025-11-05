@@ -70,7 +70,7 @@ jobs:
       - name: Check formatting
         run: |
           echo "🔍 Checking code formatting..."
-          if ! bunx biome format --check .; then
+          if ! bun biome format --check .; then
             echo "❌ Code formatting check failed!"
             echo "Please run 'bun run format' to fix formatting issues before releasing."
             exit 1
