@@ -504,7 +504,7 @@ export const MailSchema = z.object({
   userMap: z.optional(z.record(z.string(), z.string())),
   entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
-  parentThreadId: z.string().optional(),
+  parentThreadId: z.string().optional(), // the mailId of parent mail
   from: z.string(),
   to: z.array(z.string()),
   cc: z.array(z.string()),
