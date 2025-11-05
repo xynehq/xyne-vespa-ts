@@ -1224,7 +1224,7 @@ class VespaClient {
     email: string,
   ): Promise<VespaSearchResponse> {
     const yqlIds = threadIds.map((id) => contains("threadId", id))
-    const pYqlIds = threadIds.map((id)=>contains("parentThreadId",id))
+    const pYqlIds = threadIds.map((id) => contains("parentThreadId", id))
     // Include permissions check to ensure user has access to these emails
     const yql = YqlBuilder.create({ email, requirePermissions: true })
       .from(mailSchema)
