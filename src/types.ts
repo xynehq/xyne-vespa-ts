@@ -504,6 +504,7 @@ export const MailSchema = z.object({
   userMap: z.optional(z.record(z.string(), z.string())),
   entity: z.nativeEnum(MailEntity),
   permissions: z.array(z.string()),
+  parentThreadId: z.string().optional(), // the mailId of parent mail
   from: z.string(),
   to: z.array(z.string()),
   cc: z.array(z.string()),
@@ -1206,6 +1207,7 @@ export const MailResponseSchema = VespaMailGetSchema.pick({
 })
   .strip()
   .extend({
+    parentThreadId: z.string().optional(),
     type: z.literal("mail"),
     mimeType: z.string(),
     chunks_summary: z.array(scoredChunk).optional(),
