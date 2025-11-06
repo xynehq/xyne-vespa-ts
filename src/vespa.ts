@@ -964,6 +964,7 @@ export class VespaService {
                 const mergedTimestampRange = this.mergeTimestampRanges(
                   timestampRange,
                   filter.timeRange,
+                  Apps.Gmail,
                 )
                 if (mergedTimestampRange) {
                   const timeCondition = timestamp(
@@ -1111,6 +1112,7 @@ export class VespaService {
                 const mergedTimestampRange = this.mergeTimestampRanges(
                   timestampRange,
                   filter.timeRange,
+                  Apps.Slack,
                 )
                 if (mergedTimestampRange) {
                   const timeCondition = timestamp(
@@ -1549,6 +1551,7 @@ export class VespaService {
       | null
       | undefined,
     filterTimeRange: { startDate: number; endDate: number } | undefined,
+    app?: Apps,
   ): { to: number | null; from: number | null } | null => {
     this.logger.info(JSON.stringify(existingRange))
     this.logger.info(JSON.stringify(filterTimeRange))
@@ -1560,9 +1563,9 @@ export class VespaService {
       if (!existingRange) return null
 
       return {
-        to: existingRange.to ? normalizeTimestamp(existingRange.to) : null,
+        to: existingRange.to ? normalizeTimestamp(existingRange.to, app) : null,
         from: existingRange.from
-          ? normalizeTimestamp(existingRange.from)
+          ? normalizeTimestamp(existingRange.from, app)
           : null,
       }
     }
@@ -1570,10 +1573,10 @@ export class VespaService {
     // Extract and normalize app filter time range
     const appFilterRange: { to: number | null; from: number | null } = {
       to: filterTimeRange.endDate
-        ? normalizeTimestamp(filterTimeRange.endDate)
+        ? normalizeTimestamp(filterTimeRange.endDate, app)
         : null,
       from: filterTimeRange.startDate
-        ? normalizeTimestamp(filterTimeRange.startDate)
+        ? normalizeTimestamp(filterTimeRange.startDate, app)
         : null,
     }
 
@@ -1587,8 +1590,10 @@ export class VespaService {
 
     // Normalize existing range
     const normalizedExistingRange = {
-      to: existingRange.to ? normalizeTimestamp(existingRange.to) : null,
-      from: existingRange.from ? normalizeTimestamp(existingRange.from) : null,
+      to: existingRange.to ? normalizeTimestamp(existingRange.to, app) : null,
+      from: existingRange.from
+        ? normalizeTimestamp(existingRange.from, app)
+        : null,
     }
 
     // Both exist - take intersection (most restrictive range)
@@ -2574,6 +2579,7 @@ export class VespaService {
           const mergedTimestampRange = this.mergeTimestampRanges(
             timestampRange,
             filter.timeRange,
+            Apps.Gmail,
           )
           if (mergedTimestampRange) {
             const timeCondition = timestamp(
@@ -2638,6 +2644,7 @@ export class VespaService {
           const mergedTimestampRange = this.mergeTimestampRanges(
             timestampRange,
             filter.timeRange,
+            Apps.Slack,
           )
           if (mergedTimestampRange) {
             const timeCondition = timestamp(
@@ -2833,7 +2840,7 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.offset(offset ?? 0).build()
-    // console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
+    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] Query Details:`, {
       schema,
       app,

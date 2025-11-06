@@ -1,5 +1,5 @@
 import { int } from "zod"
-import type { ILogger, MailParticipant, VespaSearchResponse } from "../types"
+import { Apps, ILogger, MailParticipant, VespaSearchResponse } from "../types"
 import { YqlCondition } from "../yql/types"
 import { contains, matches, or } from "../yql"
 
@@ -124,13 +124,19 @@ export function isValidTimestampRange(
   )
 }
 
-export const normalizeTimestamp = (timestamp: number): number => {
+export const normalizeTimestamp = (timestamp: number, app?: Apps): number => {
   const timestampStr = timestamp.toString()
   if (timestampStr.length === 10) {
     // Convert seconds to milliseconds
+    if (app == Apps.Slack) {
+      return timestamp
+    }
     return timestamp * 1000
   } else if (timestampStr.length === 13) {
     // Already in milliseconds
+    if (app == Apps.Slack) {
+      return timestamp / 1000
+    }
     return timestamp
   }
   // For other lengths, assume it's already correct
