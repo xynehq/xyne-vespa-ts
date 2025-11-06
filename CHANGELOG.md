@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.1...v1.4.2) (2025-11-06)
+
+
+### Bug Fixes
+
+* **ts-coondition:** correct the timestamp values ([#52](https://github.com/xynehq/xyne-vespa-ts/issues/52)) ([012b9a6](https://github.com/xynehq/xyne-vespa-ts/commit/012b9a63075406193e6079696675dd2a7d7a065f))
+
 ## [1.4.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.0...v1.4.1) (2025-11-05)
 
 
