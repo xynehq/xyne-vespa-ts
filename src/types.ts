@@ -1684,6 +1684,7 @@ interface Chunk {
 export interface ITextChunker {
   chunkDocument(text: string): Chunk[]
 }
+
 /**
  * Main dependencies interface for dependency injection
  */
@@ -1691,7 +1692,6 @@ export interface VespaDependencies {
   logger: ILogger
   config: VespaConfig
   sourceSchemas: VespaSchema[]
-  vespaEndpoint: string
   textChunker?: ITextChunker
 }
 
