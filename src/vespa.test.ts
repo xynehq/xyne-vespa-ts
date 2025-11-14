@@ -38,6 +38,10 @@ const mockConfig = {
   cluster: "test-cluster",
   productionServerUrl: "",
   apiKey: "",
+  vespaEndpoint: {
+    feedEndpoint: "http://0.0.0.0:8080",
+    queryEndpoint: "http://0.0.0.0:8081",
+  },
 }
 
 const mockVespaClient = {
@@ -370,10 +374,6 @@ describe("VespaService - HybridDefaultProfile", () => {
         eventSchema,
         chatMessageSchema,
       ] as VespaSchema[],
-      vespaEndpoint: {
-        documentEndpoint: "http://localhost:8080",
-        searchEndpoint: "http://localhost:8081",
-      },
     }
 
     vespaService = new VespaService(dependencies)
