@@ -370,7 +370,10 @@ describe("VespaService - HybridDefaultProfile", () => {
         eventSchema,
         chatMessageSchema,
       ] as VespaSchema[],
-      vespaEndpoint: "http://localhost:8080",
+      vespaEndpoint: {
+        documentEndpoint:"http://localhost:8080",
+        searchEndpoint:"http://localhost:8081"
+      },
     }
 
     vespaService = new VespaService(dependencies)
