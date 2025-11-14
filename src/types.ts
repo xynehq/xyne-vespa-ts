@@ -1710,11 +1710,6 @@ export interface ITextChunker {
   chunkDocument(text: string): Chunk[]
 }
 
-// type for supporting json format
-export type vespaEndpoint = {
-  feedEndpoint: string
-  queryEndpoint: string
-}
 /**
  * Main dependencies interface for dependency injection
  */

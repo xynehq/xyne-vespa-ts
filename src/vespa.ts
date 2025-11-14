@@ -45,7 +45,6 @@ import type {
   VespaChatUser,
   AppFilter,
   VespaChatContainer,
-  vespaEndpoint,
 } from "./types"
 import { SearchModes } from "./types"
 import {
