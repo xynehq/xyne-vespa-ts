@@ -38,10 +38,8 @@ const mockConfig = {
   cluster: "test-cluster",
   productionServerUrl: "",
   apiKey: "",
-  vespaEndpoint: {
-    feedEndpoint: "http://0.0.0.0:8080",
-    queryEndpoint: "http://0.0.0.0:8081",
-  },
+  feedEndpoint: "http://0.0.0.0:8080",
+  queryEndpoint: "http://0.0.0.0:8081",
 }
 
 const mockVespaClient = {
