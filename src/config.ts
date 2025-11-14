@@ -9,4 +9,8 @@ export default {
   cluster: "my_content",
   productionServerUrl: "",
   apiKey: "",
+  vespaEndpoint: {
+    feedEndpoint: "http://0.0.0.0:8080",
+    queryEndpoint: "http://0.0.0.0:8081",
+  },
 }

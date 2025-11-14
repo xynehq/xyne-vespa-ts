@@ -1709,9 +1709,11 @@ interface Chunk {
 export interface ITextChunker {
   chunkDocument(text: string): Chunk[]
 }
+
+// type for supporting json format
 export type vespaEndpoint = {
-  documentEndpoint: string
-  searchEndpoint: string
+  feedEndpoint: string
+  queryEndpoint: string
 }
 /**
  * Main dependencies interface for dependency injection
@@ -1720,7 +1722,6 @@ export interface VespaDependencies {
   logger: ILogger
   config: VespaConfig
   sourceSchemas: VespaSchema[]
-  vespaEndpoint: vespaEndpoint
   textChunker?: ITextChunker
 }
 

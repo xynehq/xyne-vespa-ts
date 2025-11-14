@@ -120,14 +120,12 @@ export class VespaService {
   private config: VespaConfig
   private vespa: VespaClient
   private schemaSources: VespaSchema[]
-  private vespaEndpoint: vespaEndpoint
   constructor(dependencies: VespaDependencies) {
     this.logger = dependencies.logger.child({ module: "vespa" })
     this.config = dependencies.config
     this.schemaSources = dependencies.sourceSchemas || AllSources
-    this.vespaEndpoint = dependencies.vespaEndpoint
     // Initialize Vespa clients
-    this.vespa = new VespaClient(this.vespaEndpoint, this.logger, this.config)
+    this.vespa = new VespaClient(this.logger, this.config)
   }
 
   getSchemaSources(): VespaSchema[] {
