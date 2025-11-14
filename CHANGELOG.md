@@ -1,3 +1,13 @@
+## [1.4.3](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.2...v1.4.3) (2025-11-14)
+
+
+### Bug Fixes
+
+* **vespaEndpoints:** fixed the naming and removed unwanted variables ([e382cca](https://github.com/xynehq/xyne-vespa-ts/commit/e382ccaf8baa61cd5a020994264e4ed0f31cdf84))
+* **vespaEndpoints:** fixed the types ([6d65067](https://github.com/xynehq/xyne-vespa-ts/commit/6d65067b7f7ac29526e5061a398c98764f1b3e96))
+* **vespaEndpoints:** resolved comments ([7710f26](https://github.com/xynehq/xyne-vespa-ts/commit/7710f26024ca6277dbdf78c5a65eb6557de5a409))
+* **vespaEndpoints:** resolved comments ([4bc9e36](https://github.com/xynehq/xyne-vespa-ts/commit/4bc9e36efa26513c19befc63470b10119d2234ce))
+
 ## [1.4.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.1...v1.4.2) (2025-11-06)
 
 
