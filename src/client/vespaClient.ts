@@ -58,11 +58,16 @@ type VespaConfigValues = {
 class VespaClient {
   private maxRetries: number
   private retryDelay: number
-  private vespaEndpoint: string
+  private documentEndpoint: string
+  private searchEndpoint: string
   private logger: ILogger
 
   constructor(
-    endpoint?: string,
+    endpointOrConfig?: {
+      documentEndpoint?: string
+      searchEndpoint?: string
+      endpoint?: string // for backward compatibility
+    },
     logger?: ILogger,
     config?: {
       vespaMaxRetryAttempts?: number
@@ -73,10 +78,14 @@ class VespaClient {
     this.logger = logger || consoleLogger
     this.maxRetries = config?.vespaMaxRetryAttempts || 3
     this.retryDelay = config?.vespaRetryDelay || 1000 // milliseconds
-    this.vespaEndpoint =
-      endpoint || `http://${config?.vespaBaseHost || "localhost"}:8080`
-  }
 
+    const baseHost = config?.vespaBaseHost || "localhost"
+
+    this.documentEndpoint =
+      endpointOrConfig?.documentEndpoint || `http://${baseHost}:8080`
+    this.searchEndpoint =
+      endpointOrConfig?.searchEndpoint || `http://${baseHost}:8081`
+  }
   private async delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
@@ -123,7 +132,7 @@ class VespaClient {
   }
 
   async search<T>(payload: any): Promise<T> {
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
 
     try {
       const response = await this.fetchWithRetry(url, {
@@ -213,7 +222,7 @@ class VespaClient {
   async deleteAllDocuments(options: VespaConfigValues): Promise<void> {
     const { cluster, namespace, schema } = options
     // Construct the DELETE URL
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid?selection=true&cluster=${cluster}`
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid?selection=true&cluster=${cluster}`
 
     try {
       const response: Response = await this.fetchWithRetry(url, {
@@ -242,7 +251,7 @@ class VespaClient {
     options: VespaConfigValues,
   ): Promise<void> {
     try {
-      const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
+      const url = `${this.documentEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
       const response = await this.fetchWithRetry(url, {
         method: "POST",
         headers: {
@@ -281,7 +290,7 @@ class VespaClient {
 
   async insert(document: Inserts, options: VespaConfigValues): Promise<void> {
     try {
-      const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
+      const url = `${this.documentEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${document.docId}`
       const response = await this.fetchWithRetry(url, {
         method: "POST",
         headers: {
@@ -320,7 +329,7 @@ class VespaClient {
 
   async insertUser(user: VespaUser, options: VespaConfigValues): Promise<void> {
     try {
-      const url = `${this.vespaEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${user.docId}`
+      const url = `${this.documentEndpoint}/document/v1/${options.namespace}/${options.schema}/docid/${user.docId}`
       const response = await this.fetchWithRetry(url, {
         method: "POST",
         headers: {
@@ -349,7 +358,7 @@ class VespaClient {
 
   async autoComplete<T>(searchPayload: T): Promise<VespaAutocompleteResponse> {
     try {
-      const url = `${this.vespaEndpoint}/search/`
+      const url = `${this.searchEndpoint}/search/`
 
       const response = await this.fetchWithRetry(url, {
         method: "POST",
@@ -385,7 +394,7 @@ class VespaClient {
 
   async groupSearch<T>(payload: T): Promise<AppEntityCounts> {
     try {
-      const url = `${this.vespaEndpoint}/search/`
+      const url = `${this.searchEndpoint}/search/`
       const response = await this.fetchWithRetry(url, {
         method: "POST",
         headers: {
@@ -424,7 +433,7 @@ class VespaClient {
         `select * from sources ${schema} where uploadedBy contains '${email}'`,
       )
       // Construct the search URL with necessary query parameters
-      const url = `${this.vespaEndpoint}/search/?yql=${yql}&hits=0&cluster=${options.cluster}`
+      const url = `${this.searchEndpoint}/search/?yql=${yql}&hits=0&cluster=${options.cluster}`
       const response: Response = await this.fetchWithRetry(url, {
         method: "GET",
         headers: {
@@ -463,7 +472,7 @@ class VespaClient {
     options: VespaConfigValues & { docId: string },
   ): Promise<VespaGetResult> {
     const { docId, namespace, schema } = options
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
     try {
       const response = await this.fetchWithRetry(url, {
         method: "GET",
@@ -495,7 +504,7 @@ class VespaClient {
     },
   ): Promise<VespaSearchResponse> {
     const { docIds, generateAnswerSpan, yql } = options
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
 
     try {
       const payload = {
@@ -535,7 +544,7 @@ class VespaClient {
   ): Promise<void> {
     const { docId, namespace, schema } = options
 
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
     try {
       const response = await this.fetchWithRetry(url, {
         method: "PUT",
@@ -577,7 +586,7 @@ class VespaClient {
     options: VespaConfigValues & { docId: string },
   ): Promise<void> {
     const { docId, namespace, schema } = options
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
     try {
       const response = await fetch(url, {
         method: "PUT",
@@ -620,7 +629,7 @@ class VespaClient {
   ): Promise<void> {
     const { docId, namespace, schema } = options
 
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}`
     let fields: string[] = []
     try {
       const updateObject = Object.entries(updatedFields).reduce(
@@ -669,7 +678,7 @@ class VespaClient {
     options: VespaConfigValues & { docId: string },
   ): Promise<void> {
     const { docId, namespace, schema } = options // Extract namespace and schema again
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}` // Revert to original URL construction
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid/${docId}` // Revert to original URL construction
     try {
       const response = await this.fetchWithRetry(url, {
         method: "DELETE",
@@ -727,7 +736,7 @@ class VespaClient {
         .where(inArray("docId", batchDocIds))
         .build()
 
-      const url = `${this.vespaEndpoint}/search/`
+      const url = `${this.searchEndpoint}/search/`
 
       try {
         const payload = {
@@ -805,7 +814,7 @@ class VespaClient {
       .from("*")
       .where(inArray("docId", docIds))
       .build()
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
 
     try {
       const payload = {
@@ -883,7 +892,7 @@ class VespaClient {
       .where(inArray("mailId", mailIds))
       .build()
 
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
 
     try {
       const payload = {
@@ -966,7 +975,7 @@ class VespaClient {
       .where(inArray("docId", docIds))
       .build()
 
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=${docIds.length}`
+    const url = `${this.searchEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=${docIds.length}`
 
     try {
       const response = await this.fetchWithRetry(url, {
@@ -1021,7 +1030,7 @@ class VespaClient {
   async getUsersByNamesAndEmails<T>(payload: T) {
     try {
       const response = await this.fetchWithRetry(
-        `${this.vespaEndpoint}/search/`,
+        `${this.searchEndpoint}/search/`,
         {
           method: "POST",
           headers: {
@@ -1057,7 +1066,7 @@ class VespaClient {
   async getItems<T>(payload: T) {
     try {
       const response: Response = await this.fetchWithRetry(
-        `${this.vespaEndpoint}/search/`,
+        `${this.searchEndpoint}/search/`,
         {
           method: "POST",
           headers: {
@@ -1089,7 +1098,7 @@ class VespaClient {
       .from(mailSchema)
       .where(contains("userMap", sameElement(email, docId)))
       .build()
-    const url = `${this.vespaEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=1&timeout=30s`
+    const url = `${this.searchEndpoint}/search/?yql=${encodeURIComponent(yql)}&hits=1&timeout=30s`
 
     try {
       const response = await this.fetchWithRetry(url, {
@@ -1129,7 +1138,7 @@ class VespaClient {
     cluster: string,
   ): Promise<any | null> {
     // Returning any for now, structure is { documents: [{ id: string, fields: ... }] }
-    const url = `${this.vespaEndpoint}/document/v1/${namespace}/${schema}/docid?selection=true&wantedDocumentCount=100&cluster=${cluster}` // Fetch 100 docs
+    const url = `${this.documentEndpoint}/document/v1/${namespace}/${schema}/docid?selection=true&wantedDocumentCount=100&cluster=${cluster}` // Fetch 100 docs
     this.logger.debug(`Fetching 100 random documents from: ${url}`)
     try {
       const response = await this.fetchWithRetry(url, {
@@ -1191,7 +1200,7 @@ class VespaClient {
       .where(or(yqlIds))
       .build()
 
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
     try {
       const payload = {
         yql,
@@ -1232,7 +1241,7 @@ class VespaClient {
       .where(or([...yqlIds, ...pYqlIds]))
       .build()
 
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
     try {
       const payload = {
         yql,
@@ -1301,7 +1310,7 @@ class VespaClient {
 
     const yql = yqlBuilder.build()
 
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
     try {
       const payload = {
         yql,
@@ -1342,7 +1351,7 @@ class VespaClient {
         .where(contains("name", channelName))
         .build()
 
-      const url = `${this.vespaEndpoint}/search/`
+      const url = `${this.searchEndpoint}/search/`
       const exactPayload = {
         yql: exactYql,
       }
@@ -1433,7 +1442,7 @@ class VespaClient {
       const yqlIds = docId.map((id) => contains("parentId", id))
       yqlBuilder.where(or(yqlIds)).limit(400)
     }
-    const url = `${this.vespaEndpoint}/search/`
+    const url = `${this.searchEndpoint}/search/`
     try {
       const payload = {
         yql: yqlBuilder.build(),

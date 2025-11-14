@@ -45,6 +45,7 @@ import type {
   VespaChatUser,
   AppFilter,
   VespaChatContainer,
+  vespaEndpoint,
 } from "./types"
 import { SearchModes } from "./types"
 import {
@@ -119,7 +120,7 @@ export class VespaService {
   private config: VespaConfig
   private vespa: VespaClient
   private schemaSources: VespaSchema[]
-  private vespaEndpoint: string
+  private vespaEndpoint: vespaEndpoint
   constructor(dependencies: VespaDependencies) {
     this.logger = dependencies.logger.child({ module: "vespa" })
     this.config = dependencies.config
