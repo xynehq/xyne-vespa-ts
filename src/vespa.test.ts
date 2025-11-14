@@ -371,8 +371,8 @@ describe("VespaService - HybridDefaultProfile", () => {
         chatMessageSchema,
       ] as VespaSchema[],
       vespaEndpoint: {
-        documentEndpoint:"http://localhost:8080",
-        searchEndpoint:"http://localhost:8081"
+        documentEndpoint: "http://localhost:8080",
+        searchEndpoint: "http://localhost:8081",
       },
     }
 
