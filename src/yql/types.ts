@@ -26,7 +26,8 @@ export interface YqlProfile {
 }
 
 export interface YqlBuilderOptions {
-  email?: string
+  email?: string // Deprecated: use permissionId instead. Kept for backward compatibility.
+  permissionId?: string | string[] // User email or department ID(s) for permission filtering. Supports multiple departments as array.
   sources?: string[]
   targetHits?: number
   limit?: number

@@ -55,22 +55,45 @@ export class YqlBuilder {
   private permissionWrapper?: PermissionWrapper
   private options: Required<YqlBuilderOptions>
   private withPermissions: boolean
-  private userEmail?: string
+  private permissionValues: string[] // Stores email or departmentId(s) for permission checks - now supports multiple values
   constructor(options: YqlBuilderOptions) {
-    const hasEmail = !!(options.email && options.email.trim())
+    // Resolve permission value: prefer permissionId, fallback to email for backward compatibility
+    const resolvedPermissionValue = options.permissionId || options.email
+
+    // Convert to array if string, or use array as-is
+    const permissionArray = Array.isArray(resolvedPermissionValue)
+      ? resolvedPermissionValue
+      : resolvedPermissionValue
+        ? [resolvedPermissionValue]
+        : []
+
+    const hasPermissionValue =
+      permissionArray.length > 0 &&
+      permissionArray.every((val) => val && val.trim())
     const requirePermissionsValue = options.requirePermissions !== false
 
+    console.log("[YqlBuilder] Constructor - Permission Resolution:", {
+      permissionId: options.permissionId,
+      email: options.email,
+      resolvedPermissionValues: permissionArray,
+      isMultiple: permissionArray.length > 1,
+      requirePermissions: requirePermissionsValue,
+    })
+
     // Apply permissions if:
-    // 1. Email is provided AND requirePermissions is not explicitly false, OR
-    // 2. No email provided but requirePermissions is not explicitly false
+    // 1. Permission value is provided AND requirePermissions is not explicitly false, OR
+    // 2. No permission value provided but requirePermissions is not explicitly false
     this.withPermissions = requirePermissionsValue
     if (this.withPermissions) {
-      if (!hasEmail) {
-        throw new Error("email field is required for permission check")
+      if (!hasPermissionValue) {
+        throw new Error(
+          "email or permissionId field is required for permission check",
+        )
       }
     }
     this.options = {
       email: options.email || "",
+      permissionId: options.permissionId || "",
       sources: options.sources || [],
       targetHits: options.targetHits || 10,
       limit: options.limit || 100,
@@ -79,7 +102,7 @@ export class YqlBuilder {
       requirePermissions: requirePermissionsValue, // Default to true
       validateSyntax: options.validateSyntax !== true,
     }
-    this.userEmail = options.email
+    this.permissionValues = permissionArray
   }
 
   /**
@@ -109,7 +132,11 @@ export class YqlBuilder {
     conditions: YqlCondition[],
     isPermissionBypassed: boolean = false,
   ): And {
-    if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
+    if (
+      this.withPermissions &&
+      this.permissionValues.length > 0 &&
+      !isPermissionBypassed
+    ) {
       return this.createPermissionAwareAnd(conditions)
     }
     return And.withoutPermissions(conditions)
@@ -139,7 +166,11 @@ export class YqlBuilder {
     conditions: YqlCondition[],
     isPermissionBypassed: boolean = false,
   ): Or {
-    if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
+    if (
+      this.withPermissions &&
+      this.permissionValues.length > 0 &&
+      !isPermissionBypassed
+    ) {
       return this.createPermissionAwareOr(conditions)
     }
     return Or.withoutPermissions(conditions)
@@ -413,7 +444,7 @@ export class YqlBuilder {
       this.entityCondition ||
       this.excludeDocIdCondtion ||
       this.includeDocIdCondtion ||
-      (this.withPermissions && this.userEmail)
+      (this.withPermissions && this.permissionValues.length > 0)
     ) {
       const whereClause = this.buildWhereClause()
       if (whereClause) {
@@ -443,10 +474,18 @@ export class YqlBuilder {
       this.validateYqlSyntax(yql)
     }
 
-    // Replace @email placeholder with actual email if available
-    if (this.userEmail && this.userEmail.trim()) {
-      yql = yql.replace(/@email/g, `${this.userEmail}`)
+    // Replace @email placeholder with actual permission values if available
+    // For multiple permission values, we use the first one (backward compatibility for @email placeholder)
+    if (this.permissionValues.length > 0 && this.permissionValues[0]?.trim()) {
+      yql = yql.replace(/@email/g, `${this.permissionValues[0]}`)
     }
+
+    console.log("[YqlBuilder] Final YQL Query Built:", {
+      yql,
+      permissionValues: this.permissionValues,
+      isMultiple: this.permissionValues.length > 1,
+      withPermissions: this.withPermissions,
+    })
 
     return yql
   }
@@ -488,7 +527,11 @@ export class YqlBuilder {
     }
 
     // If we have permissions enabled but no conditions, add just permissions
-    if (allConditions.length === 0 && this.withPermissions && this.userEmail) {
+    if (
+      allConditions.length === 0 &&
+      this.withPermissions &&
+      this.permissionValues.length > 0
+    ) {
       const permissionCondition = this.buildPermissionCondition()
       return permissionCondition ? permissionCondition.toString() : null
     }
@@ -510,7 +553,11 @@ export class YqlBuilder {
       this.currentSources[0] === KbItemsSchema
     // Apply permissions only at the top level if permissions are enabled
     // we also we need to skip permission checks for kb_items
-    if (this.withPermissions && this.userEmail && !isOnlyKbSource) {
+    if (
+      this.withPermissions &&
+      this.permissionValues.length > 0 &&
+      !isOnlyKbSource
+    ) {
       const processedCondition = this.applyTopLevelPermissions(finalCondition)
       return processedCondition.toString()
     }
@@ -550,7 +597,7 @@ export class YqlBuilder {
   }
 
   /**
-   * Apply permissions to each OR condition individually
+   * Apply permissions to each OR and AND condition in the tree
    */
   private applyTopLevelPermissions(condition: YqlCondition): YqlCondition {
     return this.recursivelyApplyPermissions(condition)
@@ -558,6 +605,7 @@ export class YqlBuilder {
 
   /**
    * Recursively apply permissions to all OR and AND conditions in the tree
+   * @param condition - The condition to process
    */
   private recursivelyApplyPermissions(condition: YqlCondition): YqlCondition {
     // processing each condition based on its type
@@ -573,8 +621,8 @@ export class YqlBuilder {
       const processedConditions = condition
         .getConditions()
         .map((child) => this.recursivelyApplyPermissions(child))
-      // won't require permissions for AND children as parent OR will handle it
-      // Top level ANDs will contains permissions
+
+      // Add permissions at EVERY level (nested behavior)
       return this.createAnd(processedConditions).parenthesize()
     }
 
@@ -588,11 +636,12 @@ export class YqlBuilder {
         return Or.withoutPermissions(processedConditions).parenthesize()
       }
 
-      // First, recursively process any nested OR conditions within this OR
+      // Recursively process nested conditions
       const processedConditions = condition
         .getConditions()
         .map((child) => this.recursivelyApplyPermissions(child))
 
+      // Add permissions at EVERY level (nested behavior)
       return this.createOr(processedConditions).parenthesize()
     }
 
@@ -605,9 +654,10 @@ export class YqlBuilder {
 
   /**
    * Build permission condition based on current sources
+   * Supports multiple permission values (e.g., multiple department IDs)
    */
   private buildPermissionCondition(): YqlCondition | null {
-    if (!this.userEmail) {
+    if (!this.permissionValues || this.permissionValues.length === 0) {
       return null
     }
 
@@ -615,19 +665,65 @@ export class YqlBuilder {
     const isSingleUserSchema =
       this.currentSources.length === 1 && this.currentSources[0] === userSchema
 
+    let condition: YqlCondition
+    let permissionType: string
+
     if (isSingleUserSchema) {
       // Only owner check for single user schema
-      return contains("owner", this.userEmail)
+      if (this.permissionValues.length === 1) {
+        condition = contains("owner", this.permissionValues[0]!)
+        permissionType = "owner-only"
+      } else {
+        // Multiple permission values - OR them
+        // owner contains 'value1' OR owner contains 'value2' OR ...
+        condition = or(
+          this.permissionValues.map((val) => contains("owner", val)),
+        ).parenthesize()
+        permissionType = "owner-only-multiple"
+      }
     } else if (includesUserSchema) {
       // Both owner and permissions check for mixed sources with user schema
-      return or([
-        contains("owner", this.userEmail),
-        contains("permissions", this.userEmail),
-      ]).parenthesize()
+      if (this.permissionValues.length === 1) {
+        condition = or([
+          contains("owner", this.permissionValues[0]!),
+          contains("permissions", this.permissionValues[0]!),
+        ]).parenthesize()
+        permissionType = "owner-or-permissions"
+      } else {
+        // Multiple permission values
+        // (owner contains 'v1' OR permissions contains 'v1') OR (owner contains 'v2' OR permissions contains 'v2') OR ...
+        condition = or(
+          this.permissionValues.map((val) =>
+            or([contains("owner", val), contains("permissions", val)]),
+          ),
+        ).parenthesize()
+        permissionType = "owner-or-permissions-multiple"
+      }
     } else {
-      // Only permissions check for non-user schemas
-      return contains("permissions", this.userEmail)
+      // Only permissions check for non-user schemas (e.g., Zoho Desk with department IDs)
+      if (this.permissionValues.length === 1) {
+        condition = contains("permissions", this.permissionValues[0]!)
+        permissionType = "permissions-only"
+      } else {
+        // Multiple permission values (CRITICAL FOR MULTI-DEPARTMENT SUPPORT)
+        // permissions contains 'dept1' OR permissions contains 'dept2' OR permissions contains 'dept3'
+        condition = or(
+          this.permissionValues.map((val) => contains("permissions", val)),
+        ).parenthesize()
+        permissionType = "permissions-only-multiple"
+      }
     }
+
+    console.log("[YqlBuilder] Permission Condition Built:", {
+      permissionType,
+      permissionValues: this.permissionValues,
+      permissionCount: this.permissionValues.length,
+      isMultiple: this.permissionValues.length > 1,
+      sources: this.currentSources,
+      condition: condition.toString(),
+    })
+
+    return condition
   }
 
   /**
