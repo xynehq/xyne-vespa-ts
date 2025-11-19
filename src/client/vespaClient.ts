@@ -150,7 +150,7 @@ class VespaClient {
         )
       }
 
-      const result = await response.json()
+      const result = (await response.json()) as any
       return result as T
     } catch (error: any) {
       this.logger.error(
