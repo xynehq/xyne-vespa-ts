@@ -72,14 +72,6 @@ export class YqlBuilder {
       permissionArray.every((val) => val && val.trim())
     const requirePermissionsValue = options.requirePermissions !== false
 
-    console.log("[YqlBuilder] Constructor - Permission Resolution:", {
-      permissionId: options.permissionId,
-      email: options.email,
-      resolvedPermissionValues: permissionArray,
-      isMultiple: permissionArray.length > 1,
-      requirePermissions: requirePermissionsValue,
-    })
-
     // Apply permissions if:
     // 1. Permission value is provided AND requirePermissions is not explicitly false, OR
     // 2. No permission value provided but requirePermissions is not explicitly false
@@ -480,13 +472,6 @@ export class YqlBuilder {
       yql = yql.replace(/@email/g, `${this.permissionValues[0]}`)
     }
 
-    console.log("[YqlBuilder] Final YQL Query Built:", {
-      yql,
-      permissionValues: this.permissionValues,
-      isMultiple: this.permissionValues.length > 1,
-      withPermissions: this.withPermissions,
-    })
-
     return yql
   }
 
@@ -713,15 +698,6 @@ export class YqlBuilder {
         permissionType = "permissions-only-multiple"
       }
     }
-
-    console.log("[YqlBuilder] Permission Condition Built:", {
-      permissionType,
-      permissionValues: this.permissionValues,
-      permissionCount: this.permissionValues.length,
-      isMultiple: this.permissionValues.length > 1,
-      sources: this.currentSources,
-      condition: condition.toString(),
-    })
 
     return condition
   }

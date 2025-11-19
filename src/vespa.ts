@@ -772,14 +772,6 @@ export class VespaService {
       // Support dynamic timestamp field selection for Zoho Desk
       // Supported fields: createdTime, modifiedTime, closedTime, dueDate
       const timestampField = filters?.timestampField || "createdTime"
-      console.log(
-        `[buildZohoDeskCondition] Using timestamp field: ${timestampField}`,
-        {
-          hasFilters: !!filters,
-          specifiedField: filters?.timestampField,
-          defaultUsed: !filters?.timestampField,
-        },
-      )
       conditions.push(timestamp(timestampField, timestampField, timestampRange))
     }
 
@@ -1208,13 +1200,6 @@ export class VespaService {
     const isZohoIncluded = allowedApps?.includes(Apps.ZohoDesk) || false
     const resolvedPermissionId: string[] =
       isZohoIncluded && departmentIds?.length ? departmentIds : [email || ""]
-
-    console.log("[HybridDefaultProfileForAgent] Permission resolution:", {
-      isZohoIncluded,
-      departmentIds,
-      resolvedPermissionId,
-      count: resolvedPermissionId.length,
-    })
 
     const buildDocsInclusionCondition = (fieldName: string, ids: string[]) => {
       if (!ids || ids.length === 0) return
@@ -1745,16 +1730,6 @@ export class VespaService {
     const isZohoIncluded = includedApps.includes(Apps.ZohoDesk)
     const resolvedPermissionId: string[] =
       isZohoIncluded && departmentIds?.length ? departmentIds : [email || ""]
-
-    console.log(
-      "[HybridDefaultProfileAppEntityCounts] Permission resolution:",
-      {
-        isZohoIncluded,
-        departmentIds,
-        resolvedPermissionId,
-        count: resolvedPermissionId.length,
-      },
-    )
 
     if (
       includedApps.includes(Apps.GoogleDrive) ||
@@ -2952,14 +2927,6 @@ export class VespaService {
         ? departmentIds
         : [email]
 
-    console.log("[getItems] Permission resolution:", {
-      isZohoTicket: schemas.includes(zohoTicketSchema),
-      departmentIds,
-      permissionValues,
-      usingDepartments:
-        schemas.includes(zohoTicketSchema) && departmentIds?.length,
-    })
-
     const includesApp = (targetApp: Apps): boolean => {
       if (!app) return false
       if (Array.isArray(app)) {
@@ -3170,12 +3137,6 @@ export class VespaService {
           }
         }
       }
-
-      console.log(`[getItems] Zoho Desk timestamp field selection:`, {
-        selectedField: zohoTimestampField,
-        hasAppFilters: !!appFilters[Apps.ZohoDesk],
-        isDefault: zohoTimestampField === "createdTime",
-      })
 
       timestampField.push(zohoTimestampField)
     } else {
@@ -4364,14 +4325,6 @@ export class VespaService {
       ? departmentIds
       : [email]
 
-    console.log("[searchZohoDeskTickets] Permission resolution:", {
-      departmentIds,
-      resolvedPermissionId,
-      count: resolvedPermissionId.length,
-      email,
-      hasFilters: !!(statuses || priorities || classifications),
-    })
-
     // Map SearchZohoDeskParams to AppFilter format
     // Note: departmentNames is for FILTERING, departmentIds is for PERMISSIONS
     const filters: AppFilter = {
@@ -4451,15 +4404,6 @@ export class VespaService {
       offset: offset,
       ...(alpha && { "ranking.features.query(alpha)": alpha }),
     }
-
-    console.log(
-      "[VespaService] searchZohoDeskTickets - Built search payload:",
-      {
-        yql,
-        hasQuery: !!query,
-        rankProfile,
-      },
-    )
 
     try {
       const response =
