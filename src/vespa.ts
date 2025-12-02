@@ -272,7 +272,7 @@ export class VespaService {
     // Construct the YQL query for fuzzy prefix matching with maxEditDistance:2
     // the drawback here is that for user field we will get duplicates, for the same
     // email one contact and one from user directory
-    const yql = YqlBuilder.create({ email, requirePermissions: true })
+    const yql = YqlBuilder.create({ userId: email, requirePermissions: true })
       .from(sources)
       .where(
         or([
@@ -380,7 +380,7 @@ export class VespaService {
       }
 
       const yqlBuilder = YqlBuilder.create({
-        email: userEmail,
+        userId: userEmail,
         requirePermissions: true,
         sources: availableSources,
         targetHits: hits,
@@ -1204,7 +1204,7 @@ export class VespaService {
     }
 
     const yqlBuilder = YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
       sources: [...sources],
       targetHits: hits,
@@ -1281,7 +1281,7 @@ export class VespaService {
       profile === SearchModes.AttachmentRank ? [fileSchema] : this.schemaSources
 
     return YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
       sources,
       targetHits: hits,
@@ -1322,7 +1322,7 @@ export class VespaService {
     }
 
     return YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
       sources: [chatMessageSchema],
       targetHits: hits,
@@ -1413,7 +1413,7 @@ export class VespaService {
     }
 
     return YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
       sources: newSources,
       targetHits: hits,
@@ -1678,7 +1678,7 @@ export class VespaService {
 
     const schemaSources = [...new Set(sources)]
     const yql = YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
       sources: schemaSources,
       targetHits: limit,
@@ -2781,7 +2781,7 @@ export class VespaService {
     }
 
     const yqlBuilder = YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
     }).from(schema)
 
@@ -3207,7 +3207,10 @@ export class VespaService {
       return { yql: "" } as YqlProfile
     }
 
-    const yqlBuilder = YqlBuilder.create({ email, requirePermissions: true })
+    const yqlBuilder = YqlBuilder.create({
+      userId: email,
+      requirePermissions: true,
+    })
       .from(chatMessageSchema)
       .where(and(conditions))
 
@@ -3494,7 +3497,7 @@ export class VespaService {
       yql = YqlBuilder.create({
         sources: [config.schema],
         requirePermissions: entity == SlackEntity.Channel ? true : false,
-        email: entity == SlackEntity.Channel ? requestingUserEmail : undefined,
+        userId: entity == SlackEntity.Channel ? requestingUserEmail : undefined,
       })
         .from(config.schema)
         .where(and([contains("app", Apps.Slack), contains("entity", entity)]))
@@ -3518,7 +3521,7 @@ export class VespaService {
       yql = YqlBuilder.create({
         sources: [config.schema],
         requirePermissions: entity == SlackEntity.Channel ? true : false,
-        email: entity == SlackEntity.Channel ? requestingUserEmail : undefined,
+        userId: entity == SlackEntity.Channel ? requestingUserEmail : undefined,
       })
         .from(config.schema)
         .where(
@@ -3789,7 +3792,10 @@ export class VespaService {
       }
     }
 
-    const yqlBuilder = YqlBuilder.create({ email, requirePermissions: true })
+    const yqlBuilder = YqlBuilder.create({
+      userId: email,
+      requirePermissions: true,
+    })
       .from(sources)
       .limit(limit)
     // .orderBy(timestampField, sortBy)

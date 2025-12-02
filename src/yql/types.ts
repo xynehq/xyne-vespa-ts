@@ -26,7 +26,7 @@ export interface YqlProfile {
 }
 
 export interface YqlBuilderOptions {
-  email?: string
+  userId?: string
   sources?: string[]
   targetHits?: number
   limit?: number

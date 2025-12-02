@@ -418,7 +418,7 @@ describe("VespaService - HybridDefaultProfile", () => {
     test("should extract actual condition instances from YQL builder", () => {
       // We need to modify the VespaService to expose the YqlBuilder or create our own
       const yqlBuilder = YqlBuilder.create({
-        email: "test@example.com",
+        userId: "test@example.com",
         requirePermissions: true,
         sources: [fileSchema, mailSchema, userSchema],
         targetHits: 10,
