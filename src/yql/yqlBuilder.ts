@@ -55,9 +55,9 @@ export class YqlBuilder {
   private permissionWrapper?: PermissionWrapper
   private options: Required<YqlBuilderOptions>
   private withPermissions: boolean
-  private userEmail?: string
+  private userId?: string
   constructor(options: YqlBuilderOptions) {
-    const hasEmail = !!(options.email && options.email.trim())
+    const hasUserId = !!(options.userId && options.userId.trim())
     const requirePermissionsValue = options.requirePermissions !== false
 
     // Apply permissions if:
@@ -65,12 +65,12 @@ export class YqlBuilder {
     // 2. No email provided but requirePermissions is not explicitly false
     this.withPermissions = requirePermissionsValue
     if (this.withPermissions) {
-      if (!hasEmail) {
-        throw new Error("email field is required for permission check")
+      if (!hasUserId) {
+        throw new Error("userId field is required for permission check")
       }
     }
     this.options = {
-      email: options.email || "",
+      userId: options.userId || "",
       sources: options.sources || [],
       targetHits: options.targetHits || 10,
       limit: options.limit || 100,
@@ -79,7 +79,7 @@ export class YqlBuilder {
       requirePermissions: requirePermissionsValue, // Default to true
       validateSyntax: options.validateSyntax !== true,
     }
-    this.userEmail = options.email
+    this.userId = options.userId
   }
 
   /**
@@ -109,7 +109,7 @@ export class YqlBuilder {
     conditions: YqlCondition[],
     isPermissionBypassed: boolean = false,
   ): And {
-    if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
+    if (this.withPermissions && this.userId && !isPermissionBypassed) {
       return this.createPermissionAwareAnd(conditions)
     }
     return And.withoutPermissions(conditions)
@@ -139,7 +139,7 @@ export class YqlBuilder {
     conditions: YqlCondition[],
     isPermissionBypassed: boolean = false,
   ): Or {
-    if (this.withPermissions && this.userEmail && !isPermissionBypassed) {
+    if (this.withPermissions && this.userId && !isPermissionBypassed) {
       return this.createPermissionAwareOr(conditions)
     }
     return Or.withoutPermissions(conditions)
@@ -163,7 +163,9 @@ export class YqlBuilder {
       // Only permissions check for non-user schemas
       return Or.withEmailPermissions(conditions)
     }
-  } /**
+  }
+
+  /**
    * Set the sources for the query
    */
   from(sources: VespaSchema | VespaSchema[] | "*"): this {
@@ -413,7 +415,7 @@ export class YqlBuilder {
       this.entityCondition ||
       this.excludeDocIdCondtion ||
       this.includeDocIdCondtion ||
-      (this.withPermissions && this.userEmail)
+      (this.withPermissions && this.userId)
     ) {
       const whereClause = this.buildWhereClause()
       if (whereClause) {
@@ -444,8 +446,8 @@ export class YqlBuilder {
     }
 
     // Replace @email placeholder with actual email if available
-    if (this.userEmail && this.userEmail.trim()) {
-      yql = yql.replace(/@email/g, `${this.userEmail}`)
+    if (this.userId && this.userId.trim()) {
+      yql = yql.replace(/@email/g, `${this.userId}`)
     }
 
     return yql
@@ -488,7 +490,7 @@ export class YqlBuilder {
     }
 
     // If we have permissions enabled but no conditions, add just permissions
-    if (allConditions.length === 0 && this.withPermissions && this.userEmail) {
+    if (allConditions.length === 0 && this.withPermissions && this.userId) {
       const permissionCondition = this.buildPermissionCondition()
       return permissionCondition ? permissionCondition.toString() : null
     }
@@ -510,7 +512,7 @@ export class YqlBuilder {
       this.currentSources[0] === KbItemsSchema
     // Apply permissions only at the top level if permissions are enabled
     // we also we need to skip permission checks for kb_items
-    if (this.withPermissions && this.userEmail && !isOnlyKbSource) {
+    if (this.withPermissions && this.userId && !isOnlyKbSource) {
       const processedCondition = this.applyTopLevelPermissions(finalCondition)
       return processedCondition.toString()
     }
@@ -607,7 +609,7 @@ export class YqlBuilder {
    * Build permission condition based on current sources
    */
   private buildPermissionCondition(): YqlCondition | null {
-    if (!this.userEmail) {
+    if (!this.userId) {
       return null
     }
 
@@ -617,16 +619,16 @@ export class YqlBuilder {
 
     if (isSingleUserSchema) {
       // Only owner check for single user schema
-      return contains("owner", this.userEmail)
+      return contains("owner", this.userId)
     } else if (includesUserSchema) {
       // Both owner and permissions check for mixed sources with user schema
       return or([
-        contains("owner", this.userEmail),
-        contains("permissions", this.userEmail),
+        contains("owner", this.userId),
+        contains("permissions", this.userId),
       ]).parenthesize()
     } else {
       // Only permissions check for non-user schemas
-      return contains("permissions", this.userEmail)
+      return contains("permissions", this.userId)
     }
   }
 

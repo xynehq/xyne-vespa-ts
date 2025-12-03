@@ -1231,7 +1231,7 @@ class VespaClient {
     const yqlIds = threadIds.map((id) => contains("threadId", id))
     const pYqlIds = threadIds.map((id) => contains("parentThreadId", id))
     // Include permissions check to ensure user has access to these emails
-    const yql = YqlBuilder.create({ email, requirePermissions: true })
+    const yql = YqlBuilder.create({ userId: email, requirePermissions: true })
       .from(mailSchema)
       .where(or([...yqlIds, ...pYqlIds]))
       .build()
@@ -1286,7 +1286,7 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     // For user lookup, we typically want to bypass permissions since we're looking up user records directly
     const yqlBuilder = YqlBuilder.create({
-      email: email,
+      userId: email,
       requirePermissions: false,
     })
       .select()
@@ -1340,7 +1340,10 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     try {
       // first will try exact match
-      const exactYql = YqlBuilder.create({ requirePermissions: true, email })
+      const exactYql = YqlBuilder.create({
+        requirePermissions: true,
+        userId: email,
+      })
         .select("docId")
         .from(chatContainerSchema)
         .where(contains("name", channelName))
@@ -1374,7 +1377,10 @@ class VespaClient {
       }
 
       // If no exact match found, try partial search
-      const partialYql = YqlBuilder.create({ requirePermissions: true, email })
+      const partialYql = YqlBuilder.create({
+        requirePermissions: true,
+        userId: email,
+      })
         .select("docId")
         .from(chatContainerSchema)
         .where(matches("name", channelName))
@@ -1418,7 +1424,7 @@ class VespaClient {
   ): Promise<VespaSearchResponse> {
     let yqlQuery
     const yqlBuilder = YqlBuilder.create({
-      email,
+      userId: email,
       requirePermissions: true,
     }).from(schema)
     if (!docId.length) {
