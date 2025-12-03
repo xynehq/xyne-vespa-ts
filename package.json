@@ -40,6 +40,11 @@
       "import": "./dist/client/index.esm.js",
       "require": "./dist/client/index.cjs",
       "types": "./dist/src/client/index.d.ts"
+    },
+    "./yql": {
+      "import": "./dist/yql/index.esm.js",
+      "require": "./dist/yql/index.cjs",
+      "types": "./dist/src/yql/index.d.ts"
     }
   },
   "files": [

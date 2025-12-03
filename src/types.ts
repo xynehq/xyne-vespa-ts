@@ -1716,7 +1716,7 @@ export interface ITextChunker {
 export interface VespaDependencies {
   logger: ILogger
   config: VespaConfig
-  sourceSchemas: VespaSchema[]
+  sourceSchemas?: VespaSchema[]
   textChunker?: ITextChunker
 }
 

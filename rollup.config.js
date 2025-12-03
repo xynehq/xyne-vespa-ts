@@ -33,4 +33,5 @@ export default [
   createConfig("dist/src/utils/index.js", "dist/utils/index.js"),
   createConfig("dist/src/errors/index.js", "dist/errors/index.js"),
   createConfig("dist/src/client/index.js", "dist/client/index.js"),
+  createConfig("dist/src/yql/index.js", "dist/yql/index.js"),
 ]
