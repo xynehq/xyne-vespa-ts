@@ -25,6 +25,7 @@ import {
   contains,
   andWithPermissions,
   orWithPermissions,
+  raw,
 } from "."
 import { PermissionCondition, PermissionWrapper } from "./permissions"
 import {
@@ -192,6 +193,14 @@ export class YqlBuilder {
    */
   where(condition: YqlCondition): this {
     this.whereConditions.push(condition)
+    return this
+  }
+
+  /**
+   * add a WHERE condition that is always true
+   */
+  whereTrue(): this {
+    this.whereConditions.push(and([raw("true")]))
     return this
   }
 

@@ -1,6 +1,5 @@
 import type { VespaDependencies, ILogger, VespaConfig } from "./types"
 import { VespaService } from "./vespa"
-
 /**
  * Factory function to create a configured VespaService instance
  */
