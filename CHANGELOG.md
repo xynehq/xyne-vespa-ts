@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.4...v1.5.0) (2025-12-04)
+
+
+### Features
+
+* **core:** expose building blocks for building yql ([#58](https://github.com/xynehq/xyne-vespa-ts/issues/58)) ([bd01637](https://github.com/xynehq/xyne-vespa-ts/commit/bd016373d033e96b373cafbcf9b08f771705f259))
+
 ## [1.4.4](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.3...v1.4.4) (2025-12-03)
 
 ## [1.4.3](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.2...v1.4.3) (2025-11-14)
