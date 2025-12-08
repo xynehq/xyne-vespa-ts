@@ -1,3 +1,10 @@
+# [1.6.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.5.0...v1.6.0) (2025-12-08)
+
+
+### Features
+
+* **zoho-books-ingestion:** zoho-desk-ingestion ([#56](https://github.com/xynehq/xyne-vespa-ts/issues/56)) ([71c79a1](https://github.com/xynehq/xyne-vespa-ts/commit/71c79a1d8847ff212bd0c56d4e0d93220e18781e))
+
 # [1.5.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.4.4...v1.5.0) (2025-12-04)
 
 
