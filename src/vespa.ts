@@ -347,6 +347,7 @@ export class VespaService {
     eventStatus?: EventStatusType | null,
     processedCollectionSelections?: CollectionVespaIds | null,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
+    query?: string,
   ): YqlProfile => {
     try {
       const availableSources = this.getAvailableSources(excludedApps)
@@ -397,6 +398,7 @@ export class VespaService {
         attendees,
         eventStatus,
         appFilters,
+        query,
       )
 
       let kbAppQuery: YqlCondition | null = null
@@ -501,6 +503,7 @@ export class VespaService {
     attendees?: string[] | null,
     eventStatus?: EventStatusType | null,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
+    query?: string,
   ) {
     if (includedApps.length === 0) return []
 
@@ -563,6 +566,7 @@ export class VespaService {
             entity,
             timestampRange,
             filter,
+            query,
           ),
         )
         appConditions.push(or(filterConditions))
@@ -575,6 +579,7 @@ export class VespaService {
             entity,
             timestampRange,
             undefined,
+            query,
           ),
         )
       }
@@ -809,7 +814,7 @@ export class VespaService {
     entity: Entity | Entity[] | null,
     timestampRange?: { to: number | null; from: number | null } | null,
     filters?: AppFilter,
-    includeHybridSearch: boolean = true,
+    query?: string,
   ): YqlCondition {
     // Filter conditions (status, department, etc.)
     const filterConditions: YqlCondition[] = []
@@ -1076,15 +1081,14 @@ export class VespaService {
     // before combining with AND.
     let finalCondition: YqlCondition
 
-    if (includeHybridSearch) {
+    // Determine if we should include hybrid search based on query presence
+    const shouldIncludeHybridSearch = query && query.trim().length > 0
+
+    if (shouldIncludeHybridSearch) {
       // Create hybrid search: BM25 + semantic embeddings
       const hybridSearch = or([
         userInput("@query", hits),
-        nearestNeighbor("subject_embedding", "e", hits),
-        nearestNeighbor("description_embedding", "e", hits),
-        nearestNeighbor("threadSummary_embedding", "e", hits),
-        nearestNeighbor("commentSummary_embedding", "e", hits),
-        nearestNeighbor("wholeResolutionSummary_embedding", "e", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
       ])
 
       if (filterConditions.length > 0) {
@@ -1106,7 +1110,7 @@ export class VespaService {
     }
 
     this.logger.info("[YQL Formation] buildZohoDeskCondition final condition", {
-      hybridSearchProvided: includeHybridSearch,
+      queryProvided: shouldIncludeHybridSearch,
       filterConditionsCount: filterConditions.length,
       finalYql: finalCondition.toString(),
     })
@@ -1260,6 +1264,7 @@ export class VespaService {
     selectedItem: Record<string, unknown> = {},
     email?: string,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
+    query?: string,
   ): YqlProfile => {
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
@@ -1601,6 +1606,7 @@ export class VespaService {
                   entity,
                   mergedTimestampRange,
                   filter,
+                  query,
                 ),
               )
             }
@@ -1611,11 +1617,7 @@ export class VespaService {
             const baseConditions = [
               or([
                 userInput("@query", hits),
-                nearestNeighbor("subject_embedding", "e", hits),
-                nearestNeighbor("description_embedding", "e", hits),
-                nearestNeighbor("threadSummary_embedding", "e", hits),
-                nearestNeighbor("commentSummary_embedding", "e", hits),
-                nearestNeighbor("wholeResolutionSummary_embedding", "e", hits),
+                nearestNeighbor("chunk_embeddings", "e", hits),
               ]),
             ]
 
@@ -1627,7 +1629,14 @@ export class VespaService {
           } else {
             // No filters, use standard condition
             appQueries.push(
-              this.buildZohoDeskCondition(hits, app, entity, timestampRange),
+              this.buildZohoDeskCondition(
+                hits,
+                app,
+                entity,
+                timestampRange,
+                undefined,
+                query,
+              ),
             )
           }
 
@@ -2361,6 +2370,7 @@ export class VespaService {
       eventStatus,
       processedCollectionSelections,
       appFilters,
+      query,
     )
 
     const hybridDefaultPayload = {
@@ -2561,6 +2571,7 @@ export class VespaService {
       selectedItem,
       email,
       appFilters, // Pass appFilters to the profile builder
+      query,
     )
 
     const hybridDefaultPayload = {
@@ -3166,14 +3177,14 @@ export class VespaService {
           : timestampRange
 
         // Build Zoho Desk condition using the existing helper function
-        // Pass includeHybridSearch: false for GetItems since there's no search query
+        // Pass undefined for query since GetItems has no search query
         const zohoDeskCondition = this.buildZohoDeskCondition(
           limit,
           app ?? null,
           entity ?? null,
           mergedTimestampRange,
           filter,
-          false, // includeHybridSearch: false for GetItems (no search query)
+          undefined, // No query for GetItems (filter-only)
         )
         groupConditions.push(zohoDeskCondition)
 
@@ -4482,7 +4493,7 @@ export class VespaService {
         : {}),
       ranking: { profile: rankProfile },
       offset: offset,
-      ...(alpha && { "ranking.features.query(alpha)": alpha }),
+      ...(alpha && { "input.query(alpha)": alpha }),
     }
 
     try {
