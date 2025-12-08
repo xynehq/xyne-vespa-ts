@@ -445,7 +445,6 @@ export class VespaService {
       }
 
       const result = yqlBuilder.buildProfile(profile)
-      console.log("[HybridDefaultProfile] Final YQL:", result.yql)
       return result
     } catch (error) {
       this.logger.error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
@@ -1692,7 +1691,7 @@ export class VespaService {
     if (excludedIds?.length) yqlBuilder.excludeDocIds(excludedIds)
 
     const result = yqlBuilder.buildProfile(profile)
-    console.log("[HybridDefaultProfileForAgent] Final YQL:", result.yql)
+
     return result
   }
 
@@ -4487,8 +4486,6 @@ export class VespaService {
 
     const yql = yqlBuilder.build()
     const normalizedQuery = query?.trim()
-
-    console.log("[searchZohoDeskTickets] Final YQL:", yql)
 
     const searchPayload = {
       yql,
