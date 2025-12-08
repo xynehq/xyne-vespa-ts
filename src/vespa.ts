@@ -347,7 +347,7 @@ export class VespaService {
     eventStatus?: EventStatusType | null,
     processedCollectionSelections?: CollectionVespaIds | null,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
-    query?: string,
+    query: string = "",
   ): YqlProfile => {
     try {
       const availableSources = this.getAvailableSources(excludedApps)
@@ -1082,7 +1082,9 @@ export class VespaService {
     let finalCondition: YqlCondition
 
     // Determine if we should include hybrid search based on query presence
-    const shouldIncludeHybridSearch = query && query.trim().length > 0
+    // If query is undefined, it's a getItems operation (filter-only)
+    // If query is defined (even if empty string), it's a search operation (include hybrid search)
+    const shouldIncludeHybridSearch = query !== undefined
 
     if (shouldIncludeHybridSearch) {
       // Create hybrid search: BM25 + semantic embeddings
@@ -1264,7 +1266,7 @@ export class VespaService {
     selectedItem: Record<string, unknown> = {},
     email?: string,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
-    query?: string,
+    query: string = "",
   ): YqlProfile => {
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
