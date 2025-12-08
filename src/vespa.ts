@@ -363,9 +363,6 @@ export class VespaService {
         (isZohoSpecified || hasZohoFilters) &&
         !excludedApps?.includes(Apps.ZohoDesk)
       ) {
-        console.log(
-          "[YQL Formation] Zoho Desk specified or has filters, only searching ticket schema",
-        )
         availableSources.length = 0 // Clear the array
         availableSources.push(ticketSchema) // Only add ticket schema
       }
@@ -1039,38 +1036,18 @@ export class VespaService {
         }
       }
 
-      // Email participant filters (to/cc/bcc)
-      if (filters.to && filters.to.length > 0) {
-        const toConditions = filters.to
-          .filter((email) => email && email.trim())
-          .map((email) => contains("to", email.trim()))
-        if (toConditions.length > 0) {
-          filterConditions.push(
-            toConditions.length === 1 ? toConditions[0]! : or(toConditions),
-          )
-        }
+      // Email participant filters (to/cc/bcc) - reuse Gmail logic
+      const emailParticipants: MailParticipant = {
+        to: filters.to,
+        cc: filters.cc,
+        bcc: filters.bcc,
       }
-
-      if (filters.cc && filters.cc.length > 0) {
-        const ccConditions = filters.cc
-          .filter((email) => email && email.trim())
-          .map((email) => contains("cc", email.trim()))
-        if (ccConditions.length > 0) {
-          filterConditions.push(
-            ccConditions.length === 1 ? ccConditions[0]! : or(ccConditions),
-          )
-        }
-      }
-
-      if (filters.bcc && filters.bcc.length > 0) {
-        const bccConditions = filters.bcc
-          .filter((email) => email && email.trim())
-          .map((email) => contains("bcc", email.trim()))
-        if (bccConditions.length > 0) {
-          filterConditions.push(
-            bccConditions.length === 1 ? bccConditions[0]! : or(bccConditions),
-          )
-        }
+      const participantConditions = getGmailParticipantsConditions(
+        emailParticipants,
+        this.logger,
+      )
+      if (participantConditions.length > 0) {
+        filterConditions.push(...participantConditions)
       }
 
       // Boolean SLA filters
@@ -1284,13 +1261,6 @@ export class VespaService {
     email?: string,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
   ): YqlProfile => {
-    console.log("[HYBRID DEFAULT PROFILE] called with:", {
-      app,
-      entity,
-      allowedApps,
-      appFiltersKeys: Object.keys(appFilters),
-    })
-
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
 
@@ -1671,26 +1641,12 @@ export class VespaService {
       const hasZohoFilters =
         appFilters[Apps.ZohoDesk] && appFilters[Apps.ZohoDesk]!.length > 0
 
-      console.log("[YQL Formation] DEBUG:", {
-        app,
-        allowedApps,
-        hasZohoFilters,
-        appFiltersKeys: Object.keys(appFilters),
-        zohoDeskInAllowedApps: allowedApps.includes(Apps.ZohoDesk),
-      })
-
       if (
         (app === Apps.ZohoDesk || hasZohoFilters) &&
         allowedApps.includes(Apps.ZohoDesk)
       ) {
-        console.log(
-          "[YQL Formation] Zoho Desk specified or has filters, only searching ticket schema",
-        )
         handleApp(Apps.ZohoDesk)
       } else {
-        console.log(
-          "[YQL Formation] Processing all allowed apps as Zoho conditions not met",
-        )
         allowedApps.forEach(handleApp)
       }
     } else if (dataSourceIds?.length) {
@@ -2256,7 +2212,7 @@ export class VespaService {
       excludedApps,
       email,
     )
-    // console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
+
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2306,45 +2262,36 @@ export class VespaService {
       appFilters = {},
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
-    // Ensure query is always a string (handle case where LLM returns number like ticket ID)
-    const normalizedQuery = String(query || "")
-
     // Filter out attachment app and entities if present
     const filteredApp = this.filterAttachmentApp(app)
     const filteredEntity = this.filterAttachmentEntity(entity)
 
     // either no prod config, or prod call errored
-    return await this._searchVespa(
-      normalizedQuery,
-      email,
-      filteredApp,
-      filteredEntity,
-      {
-        alpha,
-        limit,
-        offset,
-        timestampRange,
-        excludedIds,
-        notInMailLabels,
-        rankProfile,
-        requestDebug,
-        span,
-        maxHits,
-        recencyDecayRate,
-        isIntentSearch,
-        mailParticipants,
-        isSlackConnected,
-        isCalendarConnected,
-        isDriveConnected,
-        isGmailConnected,
-        orderBy,
-        owner,
-        attendees,
-        eventStatus,
-        processedCollectionSelections,
-        appFilters,
-      },
-    )
+    return await this._searchVespa(query, email, filteredApp, filteredEntity, {
+      alpha,
+      limit,
+      offset,
+      timestampRange,
+      excludedIds,
+      notInMailLabels,
+      rankProfile,
+      requestDebug,
+      span,
+      maxHits,
+      recencyDecayRate,
+      isIntentSearch,
+      mailParticipants,
+      isSlackConnected,
+      isCalendarConnected,
+      isDriveConnected,
+      isGmailConnected,
+      orderBy,
+      owner,
+      attendees,
+      eventStatus,
+      processedCollectionSelections,
+      appFilters,
+    })
   }
 
   _searchVespa(
@@ -2415,7 +2362,7 @@ export class VespaService {
       processedCollectionSelections,
       appFilters,
     )
-    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2466,8 +2413,6 @@ export class VespaService {
       maxHits = 400,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
-    // Ensure query is always a string
-    const normalizedQuery = String(query || "")
     const isDebugMode = this.config.isDebugMode || requestDebug || false
 
     let { yql, profile } = this.HybridDefaultProfileInFiles(
@@ -2478,10 +2423,9 @@ export class VespaService {
       email,
     )
 
-    // console.log("Vespa YQL Query: in files ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
-      query: normalizedQuery,
+      query,
       email: email,
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
@@ -2528,8 +2472,6 @@ export class VespaService {
       userId?: string
     },
   ): Promise<VespaSearchResponse> => {
-    // Ensure query is always a string
-    const normalizedQuery = String(query || "")
     const isDebugMode = this.config.isDebugMode || requestDebug || false
 
     let { yql, profile } = this.HybridDefaultProfileForSlack(
@@ -2544,7 +2486,7 @@ export class VespaService {
 
     const hybridDefaultPayload = {
       yql,
-      query: normalizedQuery,
+      query,
       email: email,
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
@@ -2593,8 +2535,6 @@ export class VespaService {
       appFilters = {}, // Add appFilters parameter
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
-    // Ensure query is always a string
-    const normalizedQuery = String(query || "")
     // Determine the timestamp cutoff based on lastUpdated
     // const timestamp = lastUpdated ? getTimestamp(lastUpdated) : null
     const isDebugMode = this.config.isDebugMode || requestDebug || false
@@ -2623,10 +2563,9 @@ export class VespaService {
       appFilters, // Pass appFilters to the profile builder
     )
 
-    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
-      query: normalizedQuery,
+      query,
       email: email,
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
@@ -3435,7 +3374,6 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.offset(offset ?? 0).build()
-    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] Query Details:`, {
       schema,
       app,
@@ -3968,10 +3906,7 @@ export class VespaService {
       agentChannelIds: agentSelectedChannelIds,
       offset,
     })
-    // console.log(
-    //   "Vespa YQL Query in searchSlackMessages: ",
-    //   formatYqlToReadable(yql),
-    // )
+
     if (!yql || yql.trim() === "") {
       return vespaEmptyResponse()
     }
@@ -4109,7 +4044,6 @@ export class VespaService {
         offset,
         timeout: "15s",
       }
-      // console.log(yql)
 
       this.logger.info(
         `Fetching all Slack ${config.entityName}s (page ${Math.floor(offset / limit) + 1})`,
@@ -4203,17 +4137,6 @@ export class VespaService {
     alpha: number = 0.5,
     rankProfile: SearchModes = SearchModes.NativeRank,
   ): Promise<VespaSearchResponse> => {
-    // Ensure query is always a string
-    const normalizedQuery = String(query || "").trim()
-
-    if (!normalizedQuery || normalizedQuery.length === 0) {
-      this.logger.warn("searchCollectionRAG called with empty query")
-      throw new ErrorPerformingSearch({
-        cause: new Error("empty query string"),
-        sources: KbItemsSchema,
-      })
-    }
-
     // Construct RAG YQL query - hybrid search with both text and vector search
     // This combines BM25 text search with vector similarity search
     const conditions: YqlCondition[] = [
@@ -4243,7 +4166,7 @@ export class VespaService {
 
     const searchPayload = {
       yql: yql,
-      query: normalizedQuery,
+      query,
       "ranking.profile": rankProfile,
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": alpha,
@@ -4256,7 +4179,7 @@ export class VespaService {
       const response =
         await this.vespa.search<VespaSearchResponse>(searchPayload)
       this.logger.info(
-        `[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${normalizedQuery}"`,
+        `[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${query}"`,
       )
 
       return response
@@ -4264,7 +4187,7 @@ export class VespaService {
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
         sources: KbItemsSchema,
-        message: `searchCollectionRAG failed for query: "${normalizedQuery}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
+        message: `searchCollectionRAG failed for query: "${query}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
       })
       this.logger.error(searchError, "Error in searchCollectionRAG function")
       throw searchError
@@ -4413,10 +4336,6 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.build()
-    // console.log(
-    //   "Vespa YQL Query in searchGoogleApps: ",
-    //   formatYqlToReadable(yql),
-    // )
     const searchPayload = {
       yql: yql,
       ...(query
