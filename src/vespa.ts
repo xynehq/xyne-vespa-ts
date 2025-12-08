@@ -1,7 +1,5 @@
 import crypto from "crypto"
 import pLimit from "p-limit"
-import { off } from "process"
-import { is } from "zod/v4/locales"
 import VespaClient from "./client/vespaClient"
 import {
   ErrorDeletingDocuments,
@@ -1614,18 +1612,9 @@ export class VespaService {
 
           // Build final Zoho Desk condition
           if (zohoDeskFilterConditions.length > 0) {
-            const baseConditions = [
-              or([
-                userInput("@query", hits),
-                nearestNeighbor("chunk_embeddings", "e", hits),
-              ]),
-            ]
-
-            // Add filter conditions - multiple filter groups should be OR'd together
-            // but filters within each group are already AND'd
-            baseConditions.push(or(zohoDeskFilterConditions))
-
-            appQueries.push(and(baseConditions))
+            // Each filter group already contains hybrid search + filters from buildZohoDeskCondition
+            // Just OR them together
+            appQueries.push(or(zohoDeskFilterConditions))
           } else {
             // No filters, use standard condition
             appQueries.push(
