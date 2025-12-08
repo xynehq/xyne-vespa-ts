@@ -24,6 +24,9 @@ export const datasourceSchema = "datasource"
 export const dataSourceFileSchema = "datasource_file"
 export const KbItemsSchema = "kb_items"
 
+// zoho
+export const ticketSchema = "ticket"
+
 export type VespaSchema =
   | typeof fileSchema
   | typeof userSchema
@@ -39,6 +42,7 @@ export type VespaSchema =
   | typeof datasourceSchema
   | typeof dataSourceFileSchema
   | typeof KbItemsSchema
+  | typeof ticketSchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -67,6 +71,9 @@ export enum Apps {
   MicrosoftCalendar = "microsoft-calendar",
   MicrosoftSharepoint = "microsoft-sharepoint",
   Attachment = "attachment",
+
+  // Zoho apps
+  ZohoDesk = "zoho-desk",
 }
 
 export enum WebSearchEntity {
@@ -117,6 +124,7 @@ const Schemas = z.union([
   z.literal(datasourceSchema),
   z.literal(KbItemsSchema),
   z.literal(dataSourceFileSchema),
+  z.literal(ticketSchema),
 ])
 
 export enum MailEntity {
@@ -192,6 +200,10 @@ export enum DataSourceEntity {
   DataSourceFile = "data_source_file",
 }
 
+export enum ZohoEntity {
+  Ticket = "ticket",
+}
+
 export const MicrosoftPeopleEntitySchema = z.nativeEnum(MicrosoftPeopleEntity)
 
 export const FileEntitySchema = z.union([
@@ -205,6 +217,7 @@ export const SystemEntitySchema = z.nativeEnum(SystemEntity)
 export const DataSourceEntitySchema = z.nativeEnum(DataSourceEntity)
 export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
+export const ZohoEntitySchema = z.nativeEnum(ZohoEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
 
 export type MicrosoftPeopleEntityType = z.infer<
@@ -224,6 +237,7 @@ export const entitySchema = z.union([
   WebSearchEntitySchema,
   KnowledgeBaseEntitySchema,
   MicrosoftPeopleEntitySchema,
+  ZohoEntitySchema,
 ])
 
 export type Entity =
@@ -240,6 +254,7 @@ export type Entity =
   | WebSearchEntity
   | MicrosoftPeopleEntityType
   | AttachmentEntity
+  | ZohoEntity
 
 export type WorkspaceEntity = DriveEntity
 
@@ -847,6 +862,148 @@ export const VespaChatTeamGetSchema = VespaChatTeamSchema.extend({
 export type VespaChatTeam = z.infer<typeof VespaChatTeamSchema>
 export type VespaChatTeamGet = z.infer<typeof VespaChatTeamGetSchema>
 export type VespaChatUserType = z.infer<typeof VespaChatUserSchema>
+
+// Zoho Desk Types
+const ZohoAttachmentSchema = z.object({
+  attachmentId: z.string(),
+  attachmentName: z.string(),
+  attachmentDetail: z.string(),
+  attachmentUrl: z.string(),
+  processingStatus: z.string(),
+  fileType: z.string(),
+  size: z.number(),
+})
+
+const ZohoThreadCommentSchema = z.object({
+  id: z.string(),
+  messageText: z.string(),
+  attachmentDetails: z.array(ZohoAttachmentSchema),
+  authorEmail: z.string(),
+  link: z.string(),
+  createdTime: z.number(), // Unix epoch milliseconds (consistent with VespaZohoTicketSchema)
+})
+
+export const VespaZohoTicketSchema = z.object({
+  // System fields (required for all documents)
+  workspaceExternalId: z.string(),
+  app: z.nativeEnum(Apps),
+  entity: z.nativeEnum(ZohoEntity),
+  permissions: z.array(z.string()),
+  docId: z.string(),
+
+  // Core identifiers
+  id: z.string(),
+  ticketNumber: z.string(),
+  departmentId: z.string(),
+  departmentName: z.string(),
+  accountName: z.string(),
+  productName: z.string(),
+  teamName: z.string(),
+
+  // Core ticket fields
+  subject: z.string(),
+  description: z.string(),
+  category: z.string(),
+  subCategory: z.string(),
+  classification: z.string(),
+  priority: z.string(),
+  status: z.string(),
+  resolution: z.string(),
+  webUrl: z.string(),
+  sourceType: z.string(),
+  platform: z.string(), // Platform identifier (zoho-desk, jira, linear, asana, etc.)
+  contactEmail: z.string(), // Contact email who raised the ticket (renamed from 'email')
+  assigneeEmail: z.string(),
+  createdByEmail: z.string(),
+  modifiedByEmail: z.string(),
+  channel: z.string(),
+  sharedDepartments: z.array(z.string()),
+
+  // Boolean flags
+  isOverDue: z.boolean(),
+  isResponseOverdue: z.boolean(),
+  isEscalated: z.boolean(),
+
+  // Time fields (epoch ms)
+  createdTime: z.number(),
+  modifiedTime: z.number(),
+  closedTime: z.number().optional(), // Only present for closed tickets
+  dueDate: z.number().optional(), // Only present for tickets with a due date
+  daysToClose: z.number().optional(), // Only present for closed tickets (computed from closedTime)
+
+  // Derived & NLP summaries
+  threadSummary: z.string(),
+  commentSummary: z.string(),
+  wholeResolutionSummary: z.string(),
+
+  // Email recipients
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  bcc: z.array(z.string()),
+  mentions: z.array(z.string()),
+
+  // Flattened message and attachment text arrays (for BM25 keyword search)
+  threadMessages: z.array(z.string()), // Flattened array of all thread message texts
+  commentMessages: z.array(z.string()), // Flattened array of all comment message texts
+  attachmentTexts: z.array(z.string()), // Flattened array of all attachment OCR texts
+
+  // Threads & comments
+  threads: z.array(ZohoThreadCommentSchema),
+  comments: z.array(ZohoThreadCommentSchema),
+  ticketAttachments: z.array(ZohoAttachmentSchema),
+
+  // Custom fields (business-specific fields from Zoho Desk)
+  // Note: cf_ prefix removed to match actual Vespa schema
+  merchantId: z.string().optional(), // Merchant identifier (renamed from cf_merchant_id_1)
+  productDetails: z.string().optional(), // Product details or description
+  firstResponseTime: z.number().optional(), // Timestamp (epoch milliseconds) when first response was sent
+  resolutionTime: z.number().optional(), // Timestamp (epoch milliseconds) when ticket was resolved
+  onHoldStartTime: z.number().optional(), // Timestamp (epoch milliseconds) when ticket was put on hold
+  onHoldEndTime: z.number().optional(), // Timestamp (epoch milliseconds) when ticket was taken off hold
+  escalatedEndDate: z.number().optional(), // Timestamp (epoch milliseconds) when ticket escalation ended
+})
+
+// Match features for Zoho tickets
+// Note: Embeddings are 768-dimensional bfloat16 tensors
+const ZohoTicketMatchFeaturesSchema = z.object({
+  "bm25(subject)": z.number().optional(),
+  "bm25(description)": z.number().optional(),
+  "bm25(threadSummary)": z.number().optional(),
+  "bm25(commentSummary)": z.number().optional(),
+  "bm25(wholeResolutionSummary)": z.number().optional(),
+  "closeness(field, chunk_embeddings)": z.number().optional(),
+  vector_score: z.number().optional(),
+  combined_bm25: z.number().optional(),
+  document_age_days: z.number().optional(),
+  recency_bin_index: z.number().optional(),
+  recency_bin_score: z.number().optional(),
+})
+
+export type ZohoTicketMatchFeatures = z.infer<
+  typeof ZohoTicketMatchFeaturesSchema
+>
+
+// Search schema
+export const VespaZohoTicketSearchSchema = VespaZohoTicketSchema.extend({
+  sddocname: z.literal(ticketSchema),
+  matchfeatures: ZohoTicketMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
+})
+  .merge(defaultVespaFieldsSchema)
+  .extend({
+    chunks_summary: z.array(z.string()).optional(),
+  })
+
+export type VespaZohoTicketSearch = z.infer<typeof VespaZohoTicketSearchSchema>
+
+// Get schema
+export const VespaZohoTicketGetSchema = VespaZohoTicketSchema.merge(
+  defaultVespaFieldsSchema,
+)
+
+export type VespaZohoTicket = z.infer<typeof VespaZohoTicketSchema>
+export type VespaZohoTicketGet = z.infer<typeof VespaZohoTicketGetSchema>
+
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -861,6 +1018,7 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaDataSourceSearchSchema,
   VespaDataSourceFileSearchSchema,
   VespaKbFileSearchSchema,
+  VespaZohoTicketSearchSchema,
 ])
 
 // Get schema for DataSourceFile
@@ -881,6 +1039,7 @@ const SearchMatchFeaturesSchema = z.union([
   DataSourceFileMatchFeaturesSchema,
   ChatContainerMatchFeaturesSchema,
   KbFileMatchFeaturesSchema,
+  ZohoTicketMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -895,6 +1054,7 @@ export const VespaGetFieldsSchema = z.union([
   VespaFileGetSchema,
   VespaMailGetSchema,
   VespaDataSourceFileGetSchema,
+  VespaZohoTicketGetSchema,
 ])
 
 export const VespaSearchResultsSchema = z.object({
@@ -1016,6 +1176,7 @@ export type Inserts =
   | VespaDataSource
   | VespaDataSourceFile
   | VespaKbFile
+  | VespaZohoTicket
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({
@@ -1113,6 +1274,19 @@ export const VespaAutocompleteChatContainerSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+const VespaAutocompleteZohoTicketSchema = z
+  .object({
+    docId: z.string(),
+    subject: z.string(),
+    ticketNumber: z.string(),
+    status: z.string(),
+    priority: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    sddocname: Schemas,
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteFileSchema,
   VespaAutocompleteUserSchema,
@@ -1121,6 +1295,7 @@ const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteMailAttachmentSchema,
   VespaAutocompleteChatContainerSchema,
   VespaAutocompleteChatUserSchema,
+  VespaAutocompleteZohoTicketSchema,
 ])
 
 const VespaAutocompleteFieldsSchema = z
@@ -1162,6 +1337,9 @@ export type VespaAutocompleteEvent = z.infer<
 >
 export type VespaAutocompleteUserQueryHistory = z.infer<
   typeof VespaAutocompleteUserQueryHSchema
+>
+export type VespaAutocompleteZohoTicket = z.infer<
+  typeof VespaAutocompleteZohoTicketSchema
 >
 
 export type Mail = z.infer<typeof MailSchema>
@@ -1298,6 +1476,8 @@ export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
   googledocs: Apps.GoogleDrive,
   googlesheets: Apps.GoogleDrive,
   pdf: Apps.GoogleDrive,
+  "zoho-desk": Apps.ZohoDesk,
+  zohodesk: Apps.ZohoDesk,
 }
 
 export const AutocompleteFileSchema = z
@@ -1380,6 +1560,20 @@ export const AutocompleteChatUserSchema = z
   })
   .strip()
 
+export const AutocompleteZohoTicketSchema = z
+  .object({
+    type: z.literal(ticketSchema),
+    relevance: z.number(),
+    subject: z.string(),
+    ticketNumber: z.string(),
+    status: z.string(),
+    priority: z.string(),
+    app: z.nativeEnum(Apps),
+    entity: entitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -1388,6 +1582,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteUserQueryHSchema,
   AutocompleteMailAttachmentSchema,
   AutocompleteChatUserSchema,
+  AutocompleteZohoTicketSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({
@@ -1409,6 +1604,9 @@ export type MailAttachmentAutocomplete = z.infer<
 export type EventAutocomplete = z.infer<typeof AutocompleteEventSchema>
 export type UserQueryHAutocomplete = z.infer<
   typeof AutocompleteUserQueryHSchema
+>
+export type ZohoTicketAutocomplete = z.infer<
+  typeof AutocompleteZohoTicketSchema
 >
 export type Autocomplete = z.infer<typeof AutocompleteSchema>
 
@@ -1519,6 +1717,48 @@ export const KbFileResponseSchema = VespaKbFileSchemaBase.pick({
   })
   .strip()
 
+export const ZohoTicketResponseSchema = VespaZohoTicketSchema.pick({
+  docId: true,
+  id: true,
+  ticketNumber: true,
+  subject: true,
+  description: true,
+  status: true,
+  priority: true,
+  category: true,
+  subCategory: true,
+  classification: true,
+  departmentName: true,
+  assigneeEmail: true,
+  contactEmail: true, // Contact email who raised the ticket
+  to: true, // Email recipients
+  cc: true, // CC recipients
+  bcc: true, // BCC recipients
+  accountName: true,
+  productName: true,
+  teamName: true,
+  channel: true,
+  resolution: true,
+  merchantId: true, // Merchant identifier
+  productDetails: true, // Product details
+  createdTime: true,
+  modifiedTime: true,
+  closedTime: true,
+  webUrl: true,
+  app: true,
+  entity: true,
+})
+  .extend({
+    type: z.literal(ticketSchema),
+    relevance: z.number(),
+    chunks_summary: z.array(z.string()).optional(),
+    matchfeatures: z.any().optional(),
+    rankfeatures: z.any().optional(),
+  })
+  .strip()
+
+export type ZohoTicketResponse = z.infer<typeof ZohoTicketResponseSchema>
+
 // Search Response Schema
 export const SearchResultsSchema = z.discriminatedUnion("type", [
   UserResponseSchema,
@@ -1530,6 +1770,7 @@ export const SearchResultsSchema = z.discriminatedUnion("type", [
   ChatMessageResponseSchema,
   ChatContainerResponseSchema,
   KbFileResponseSchema,
+  ZohoTicketResponseSchema,
 ])
 
 export type SearchResultDiscriminatedUnion = z.infer<typeof SearchResultsSchema>
@@ -1603,16 +1844,41 @@ export type CollectionVespaIds = {
   collectionFileIds?: string[]
 }
 
+// Zoho Desk-specific filters
+export interface ZohoAppFilter {
+  status?: string[] // e.g., ["Open", "Closed", "On Hold"]
+  priority?: string[] // e.g., ["High", "Medium", "Low"]
+  classification?: string[] // e.g., ["Incident", "Problem", "Request", "Question"]
+  departmentId?: string[]
+  departmentName?: string[]
+  assigneeEmail?: string[]
+  channel?: string[] // e.g., ["Email", "Phone", "Chat", "Web"]
+  category?: string[]
+  subCategory?: string[]
+  productName?: string[]
+  teamName?: string[]
+  accountName?: string[]
+  contactEmail?: string[] // Contact email who raised the ticket
+  merchantId?: string[] // Merchant identifier
+  isOverDue?: boolean
+  isResponseOverdue?: boolean
+  isEscalated?: boolean
+  // Zoho timestamp field selection (supports: createdTime, modifiedTime, closedTime, dueDate)
+  timestampField?: "createdTime" | "modifiedTime" | "closedTime" | "dueDate"
+  ticketNumber?: string[]
+}
+
 export interface AppFilter {
-  id: number // Numeric identifier for this filter
   // Gmail-specific filters
   from?: string[]
-  to?: string[]
-  cc?: string[]
-  bcc?: string[]
+  to?: string[] // Used by both Gmail and Zoho
+  cc?: string[] // Used by both Gmail and Zoho
+  bcc?: string[] // Used by both Gmail and Zoho
   // Slack-specific filters
   senderId?: string[]
   channelId?: string[]
+  // Zoho Desk-specific filters (extracted to separate interface)
+  zoho?: ZohoAppFilter
   // Common filters
   timeRange?: {
     startDate: number
@@ -1649,6 +1915,8 @@ export type VespaQueryConfig = {
   isDriveConnected?: boolean
   isGmailConnected?: boolean
   isCalendarConnected?: boolean
+  isZohoDeskConnected?: boolean
+  permissionId?: string
   orderBy: "asc" | "desc"
   owner?: string | string[] | null
   attendees?: string[] | null
@@ -1748,6 +2016,45 @@ export interface SearchGoogleAppsParams {
   processedCollectionSelections?: CollectionVespaIds
   channelIds?: string[]
   docIds?: string[]
+  alpha?: number
+  rankProfile?: SearchModes
+}
+
+export interface SearchZohoDeskParams {
+  email: string // User's email - used as userId for permission filtering
+  query?: string
+  limit?: number
+  offset?: number
+  sortBy?: "asc" | "desc"
+  timeRange?: {
+    startTime: number
+    endTime: number
+  }
+  // Ticket-specific filters
+  ticketNumbers?: string[]
+  statuses?: string[]
+  priorities?: string[]
+  classifications?: string[]
+  departmentNames?: string[]
+  assigneeEmails?: string[]
+  channels?: string[]
+  categories?: string[]
+  subCategories?: string[]
+  productNames?: string[]
+  teamNames?: string[]
+  accountNames?: string[]
+  contactEmails?: string[]
+  merchantIds?: string[] // cf_merchant_id_1
+  // Email participant filters
+  to?: string[]
+  cc?: string[]
+  bcc?: string[]
+  // Boolean filters
+  isOverDue?: boolean
+  isResponseOverdue?: boolean
+  isEscalated?: boolean
+  // Advanced params
+  excludeDocIds?: string[]
   alpha?: number
   rankProfile?: SearchModes
 }

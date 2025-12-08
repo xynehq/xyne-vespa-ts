@@ -1,52 +1,66 @@
+import crypto from "crypto"
+import pLimit from "p-limit"
+import VespaClient from "./client/vespaClient"
+import {
+  ErrorDeletingDocuments,
+  ErrorInsertingDocument,
+  ErrorPerformingSearch,
+  ErrorRetrievingDocuments,
+} from "./errors"
+import type {
+  AppFilter,
+  Entity,
+  EventStatusType,
+  GetItemsParams,
+  ILogger,
+  Inserts,
+  MailParticipant,
+  SearchGoogleAppsParams,
+  SearchSlackParams,
+  SearchZohoDeskParams,
+  VespaAutocompleteResponse,
+  VespaChatContainer,
+  VespaChatMessage,
+  VespaChatUser,
+  VespaConfig,
+  VespaDependencies,
+  VespaEvent,
+  VespaFile,
+  VespaGetResult,
+  VespaMail,
+  VespaQueryConfig,
+  VespaSchema,
+  VespaSearchResponse,
+  VespaSearchResult,
+  VespaUser,
+  VespaUserQueryHistory,
+} from "./types"
 import {
   Apps,
-  GoogleApps,
+  AttachmentEntity,
+  type CollectionVespaIds,
+  chatContainerSchema,
+  chatMessageSchema,
+  chatUserSchema,
+  dataSourceFileSchema,
+  datasourceSchema,
   eventSchema,
-  MailEntity,
   fileSchema,
+  GoogleApps,
+  KbItemsSchema,
+  MailEntity,
+  mailAttachmentSchema,
   mailSchema,
+  SearchModes,
+  SlackEntity,
+  type Span,
+  ticketSchema,
   userQuerySchema,
   userSchema,
-  mailAttachmentSchema,
-  chatUserSchema,
-  chatMessageSchema,
-  datasourceSchema,
-  dataSourceFileSchema,
   type VespaDataSource,
   type VespaDataSourceFile,
   type VespaDataSourceSearch,
-  type Span,
-  SlackEntity,
-  chatContainerSchema,
-  KbItemsSchema,
-  type CollectionVespaIds,
-  AttachmentEntity,
 } from "./types"
-import type {
-  VespaAutocompleteResponse,
-  VespaFile,
-  VespaMail,
-  VespaSearchResult,
-  VespaSearchResponse,
-  VespaUser,
-  VespaGetResult,
-  Entity,
-  VespaEvent,
-  VespaUserQueryHistory,
-  VespaSchema,
-  Inserts,
-  VespaQueryConfig,
-  GetItemsParams,
-  MailParticipant,
-  EventStatusType,
-  SearchGoogleAppsParams,
-  SearchSlackParams,
-  VespaChatMessage,
-  VespaChatUser,
-  AppFilter,
-  VespaChatContainer,
-} from "./types"
-import { SearchModes } from "./types"
 import {
   dateToUnixTimestamp,
   escapeYqlValue,
@@ -58,34 +72,22 @@ import {
   normalizeTimestamp,
   vespaEmptyResponse,
 } from "./utils"
-import { YqlBuilder } from "./yql/yqlBuilder"
-import { And, Or, FuzzyContains } from "./yql/conditions"
 import {
-  or,
   and,
-  userInput,
-  nearestNeighbor,
-  timestamp,
   contains,
-  matches,
+  fuzzy,
   greaterThanOrEqual,
   lessThanOrEqual,
-  fuzzy,
+  matches,
+  nearestNeighbor,
   not,
+  or,
+  timestamp,
+  userInput,
 } from "./yql"
-import {
-  ErrorDeletingDocuments,
-  ErrorRetrievingDocuments,
-  ErrorPerformingSearch,
-  ErrorInsertingDocument,
-} from "./errors"
-import crypto from "crypto"
-import VespaClient from "./client/vespaClient"
-import pLimit from "p-limit"
-import type { ILogger, VespaConfig, VespaDependencies } from "./types"
+import { And, FuzzyContains, Or } from "./yql/conditions"
 import { YqlCondition } from "./yql/types"
-import { off } from "process"
-import { is } from "zod/v4/locales"
+import { YqlBuilder } from "./yql/yqlBuilder"
 
 type YqlProfile = {
   profile: SearchModes
@@ -112,6 +114,7 @@ const AllSources = [
   datasourceSchema,
   dataSourceFileSchema,
   KbItemsSchema,
+  ticketSchema,
 ] as VespaSchema[]
 
 export class VespaService {
@@ -134,6 +137,7 @@ export class VespaService {
   getSchemaSourcesString(): string {
     return this.schemaSources.join(", ")
   }
+
   /**
    * Deletes all documents from the specified schema and namespace in Vespa.
    */
@@ -340,9 +344,27 @@ export class VespaService {
     attendees?: string[] | null,
     eventStatus?: EventStatusType | null,
     processedCollectionSelections?: CollectionVespaIds | null,
+    appFilters: Partial<Record<Apps, AppFilter[]>> = {},
+    query: string = "",
   ): YqlProfile => {
     try {
       const availableSources = this.getAvailableSources(excludedApps)
+
+      // Check if Zoho filters are present - if so, only use ticket schema
+      const hasZohoFilters =
+        appFilters[Apps.ZohoDesk] && appFilters[Apps.ZohoDesk]!.length > 0
+      const isZohoSpecified =
+        app === Apps.ZohoDesk ||
+        (Array.isArray(app) && app.includes(Apps.ZohoDesk))
+
+      // // If Zoho is specified or has Zoho filters, only search ticket schema
+      if (
+        (isZohoSpecified || hasZohoFilters) &&
+        !excludedApps?.includes(Apps.ZohoDesk)
+      ) {
+        availableSources.length = 0 // Clear the array
+        availableSources.push(ticketSchema) // Only add ticket schema
+      }
       if (
         processedCollectionSelections &&
         Object.keys(processedCollectionSelections).length > 0
@@ -351,7 +373,16 @@ export class VespaService {
           availableSources.push(KbItemsSchema)
         }
       }
-      const includedApps = this.getIncludedApps(excludedApps)
+
+      let includedApps = this.getIncludedApps(excludedApps)
+
+      // If Zoho is specified or has Zoho filters, only include Zoho in app queries
+      if (
+        (isZohoSpecified || hasZohoFilters) &&
+        !excludedApps?.includes(Apps.ZohoDesk)
+      ) {
+        includedApps = [Apps.ZohoDesk]
+      }
 
       const appQueries = this.buildAppSpecificQueries(
         includedApps,
@@ -364,6 +395,8 @@ export class VespaService {
         owner,
         attendees,
         eventStatus,
+        appFilters,
+        query,
       )
 
       let kbAppQuery: YqlCondition | null = null
@@ -409,7 +442,8 @@ export class VespaService {
         yqlBuilder.excludeDocIds(excludedIds)
       }
 
-      return yqlBuilder.buildProfile(profile)
+      const result = yqlBuilder.buildProfile(profile)
+      return result
     } catch (error) {
       this.logger.error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
       throw new Error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
@@ -439,6 +473,9 @@ export class VespaService {
           case Apps.GoogleWorkspace:
             sourcesToExclude.push(userSchema)
             break
+          case Apps.ZohoDesk:
+            sourcesToExclude.push(ticketSchema)
+            break
         }
       })
 
@@ -464,6 +501,8 @@ export class VespaService {
     owner?: string | string[] | null,
     attendees?: string[] | null,
     eventStatus?: EventStatusType | null,
+    appFilters: Partial<Record<Apps, AppFilter[]>> = {},
+    query?: string,
   ) {
     if (includedApps.length === 0) return []
 
@@ -509,6 +548,40 @@ export class VespaService {
       appConditions.push(
         this.buildSlackCondition(hits, app, entity, timestampRange),
       )
+    }
+    if (includedApps.includes(Apps.ZohoDesk)) {
+      const zohoDeskFilters = appFilters[Apps.ZohoDesk]
+
+      if (
+        zohoDeskFilters &&
+        Array.isArray(zohoDeskFilters) &&
+        zohoDeskFilters.length > 0
+      ) {
+        // Process multiple filter groups
+        const filterConditions = zohoDeskFilters.map((filter) =>
+          this.buildZohoDeskCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            filter,
+            query,
+          ),
+        )
+        appConditions.push(or(filterConditions))
+      } else {
+        // No filters provided, build condition without filters
+        appConditions.push(
+          this.buildZohoDeskCondition(
+            hits,
+            app,
+            entity,
+            timestampRange,
+            undefined,
+            query,
+          ),
+        )
+      }
     }
 
     return appConditions
@@ -734,6 +807,315 @@ export class VespaService {
     return conditions.length > 1 ? and(conditions) : conditions[0]!
   }
 
+  private buildZohoDeskCondition(
+    hits: number,
+    app: Apps | Apps[] | null,
+    entity: Entity | Entity[] | null,
+    timestampRange?: { to: number | null; from: number | null } | null,
+    filters?: AppFilter,
+    query?: string,
+  ): YqlCondition {
+    // Filter conditions (status, department, etc.)
+    const filterConditions: YqlCondition[] = []
+
+    if (timestampRange && (timestampRange.from || timestampRange.to)) {
+      // Support dynamic timestamp field selection for Zoho Desk
+      // Supported fields: createdTime, modifiedTime, closedTime, dueDate
+      const timestampField = filters?.zoho?.timestampField || "createdTime"
+      filterConditions.push(
+        timestamp(timestampField, timestampField, timestampRange),
+      )
+    }
+
+    // Apply attribute-based filters
+    if (filters?.zoho) {
+      const zFilters = filters.zoho
+
+      // Ticket number filter
+      if (zFilters.ticketNumber && zFilters.ticketNumber.length > 0) {
+        const ticketConditions = zFilters.ticketNumber
+          .filter((num) => num && num.trim())
+          .map((num) => contains("ticketNumber", num.trim()))
+        if (ticketConditions.length > 0) {
+          filterConditions.push(
+            ticketConditions.length === 1
+              ? ticketConditions[0]!
+              : or(ticketConditions),
+          )
+        }
+      }
+
+      // Status filter (Open, Closed, On Hold, etc.)
+      if (zFilters.status && zFilters.status.length > 0) {
+        const statusConditions = zFilters.status
+          .filter((s) => s && s.trim())
+          .map((s) => contains("status", s.trim()))
+        if (statusConditions.length > 0) {
+          const statusCondition =
+            statusConditions.length === 1
+              ? statusConditions[0]!
+              : or(statusConditions)
+          filterConditions.push(statusCondition)
+        }
+      }
+
+      // Priority filter (High, Medium, Low)
+      if (zFilters.priority && zFilters.priority.length > 0) {
+        const priorityConditions = zFilters.priority
+          .filter((p) => p && p.trim())
+          .map((p) => contains("priority", p.trim()))
+        if (priorityConditions.length > 0) {
+          filterConditions.push(
+            priorityConditions.length === 1
+              ? priorityConditions[0]!
+              : or(priorityConditions),
+          )
+        }
+      }
+
+      // Classification filter (Incident, Problem, Request, Question)
+      if (zFilters.classification && zFilters.classification.length > 0) {
+        const classificationConditions = zFilters.classification
+          .filter((c) => c && c.trim())
+          .map((c) => contains("classification", c.trim()))
+        if (classificationConditions.length > 0) {
+          filterConditions.push(
+            classificationConditions.length === 1
+              ? classificationConditions[0]!
+              : or(classificationConditions),
+          )
+        }
+      }
+
+      // Department filters
+      if (zFilters.departmentId && zFilters.departmentId.length > 0) {
+        const deptIdConditions = zFilters.departmentId
+          .filter((id) => id && id.trim())
+          .map((id) => contains("departmentId", id.trim()))
+        if (deptIdConditions.length > 0) {
+          filterConditions.push(
+            deptIdConditions.length === 1
+              ? deptIdConditions[0]!
+              : or(deptIdConditions),
+          )
+        }
+      }
+
+      if (zFilters.departmentName && zFilters.departmentName.length > 0) {
+        const deptNameConditions = zFilters.departmentName
+          .filter((name) => name && name.trim())
+          .map((name) => contains("departmentName", name.trim()))
+        if (deptNameConditions.length > 0) {
+          const deptCondition =
+            deptNameConditions.length === 1
+              ? deptNameConditions[0]!
+              : or(deptNameConditions)
+          filterConditions.push(deptCondition)
+        }
+      }
+
+      // Assignee email filter
+      if (zFilters.assigneeEmail && zFilters.assigneeEmail.length > 0) {
+        const assigneeConditions = zFilters.assigneeEmail
+          .filter((email) => email && email.trim())
+          .map((email) => contains("assigneeEmail", email.trim()))
+        if (assigneeConditions.length > 0) {
+          const assigneeCondition =
+            assigneeConditions.length === 1
+              ? assigneeConditions[0]!
+              : or(assigneeConditions)
+          filterConditions.push(assigneeCondition)
+        }
+      }
+
+      // Contact email filter (person who raised the ticket)
+      if (zFilters.contactEmail && zFilters.contactEmail.length > 0) {
+        const emailConditions = zFilters.contactEmail
+          .filter((email) => email && email.trim())
+          .map((email) => contains("contactEmail", email.trim())) // Updated to match schema field name
+        if (emailConditions.length > 0) {
+          filterConditions.push(
+            emailConditions.length === 1
+              ? emailConditions[0]!
+              : or(emailConditions),
+          )
+        }
+      }
+
+      // Channel filter (Email, Phone, Chat, Web, etc.)
+      if (zFilters.channel && zFilters.channel.length > 0) {
+        const channelConditions = zFilters.channel
+          .filter((ch) => ch && ch.trim())
+          .map((ch) => contains("channel", ch.trim()))
+        if (channelConditions.length > 0) {
+          filterConditions.push(
+            channelConditions.length === 1
+              ? channelConditions[0]!
+              : or(channelConditions),
+          )
+        }
+      }
+
+      // Account name filter
+      if (zFilters.accountName && zFilters.accountName.length > 0) {
+        const accountConditions = zFilters.accountName
+          .filter((name) => name && name.trim())
+          .map((name) => contains("accountName", name.trim()))
+        if (accountConditions.length > 0) {
+          filterConditions.push(
+            accountConditions.length === 1
+              ? accountConditions[0]!
+              : or(accountConditions),
+          )
+        }
+      }
+
+      // Category filters
+      if (zFilters.category && zFilters.category.length > 0) {
+        const categoryConditions = zFilters.category
+          .filter((cat) => cat && cat.trim())
+          .map((cat) => contains("category", cat.trim()))
+        if (categoryConditions.length > 0) {
+          filterConditions.push(
+            categoryConditions.length === 1
+              ? categoryConditions[0]!
+              : or(categoryConditions),
+          )
+        }
+      }
+
+      if (zFilters.subCategory && zFilters.subCategory.length > 0) {
+        const subCatConditions = zFilters.subCategory
+          .filter((sub) => sub && sub.trim())
+          .map((sub) => contains("subCategory", sub.trim()))
+        if (subCatConditions.length > 0) {
+          filterConditions.push(
+            subCatConditions.length === 1
+              ? subCatConditions[0]!
+              : or(subCatConditions),
+          )
+        }
+      }
+
+      // Product name filter
+      if (zFilters.productName && zFilters.productName.length > 0) {
+        const productConditions = zFilters.productName
+          .filter((p) => p && p.trim())
+          .map((p) => contains("productName", p.trim()))
+        if (productConditions.length > 0) {
+          filterConditions.push(
+            productConditions.length === 1
+              ? productConditions[0]!
+              : or(productConditions),
+          )
+        }
+      }
+
+      // Team name filter
+      if (zFilters.teamName && zFilters.teamName.length > 0) {
+        const teamConditions = zFilters.teamName
+          .filter((t) => t && t.trim())
+          .map((t) => contains("teamName", t.trim()))
+        if (teamConditions.length > 0) {
+          filterConditions.push(
+            teamConditions.length === 1
+              ? teamConditions[0]!
+              : or(teamConditions),
+          )
+        }
+      }
+
+      // Custom field: Merchant ID
+      const merchantIds = zFilters.merchantId
+      if (merchantIds && merchantIds.length > 0) {
+        const merchantConditions = merchantIds
+          .filter((id) => id && id.trim())
+          .map((id) => contains("merchantId", id.trim())) // Updated to match schema field name
+        if (merchantConditions.length > 0) {
+          filterConditions.push(
+            merchantConditions.length === 1
+              ? merchantConditions[0]!
+              : or(merchantConditions),
+          )
+        }
+      }
+
+      // Email participant filters (to/cc/bcc) - reuse Gmail logic
+      const emailParticipants: MailParticipant = {
+        to: filters.to,
+        cc: filters.cc,
+        bcc: filters.bcc,
+      }
+      const participantConditions = getGmailParticipantsConditions(
+        emailParticipants,
+        this.logger,
+      )
+      if (participantConditions.length > 0) {
+        filterConditions.push(...participantConditions)
+      }
+
+      // Boolean SLA filters
+      if (zFilters.isOverDue !== undefined) {
+        filterConditions.push(
+          contains("isOverDue", zFilters.isOverDue.toString()),
+        )
+      }
+
+      if (zFilters.isResponseOverdue !== undefined) {
+        filterConditions.push(
+          contains("isResponseOverdue", zFilters.isResponseOverdue.toString()),
+        )
+      }
+
+      if (zFilters.isEscalated !== undefined) {
+        filterConditions.push(
+          contains("isEscalated", zFilters.isEscalated.toString()),
+        )
+      }
+    }
+
+    // Combine hybrid search with filter conditions
+    // Structure: (hybridSearch) AND filter1 AND filter2 AND ...
+    // Special handling: If we have filters, we need to ensure the OR is wrapped in parentheses
+    // before combining with AND.
+    let finalCondition: YqlCondition
+
+    // Determine if we should include hybrid search based on non-empty query
+    const normalizedQuery = query?.trim()
+    const shouldIncludeHybridSearch = !!normalizedQuery
+
+    if (shouldIncludeHybridSearch) {
+      // Create hybrid search: BM25 + semantic embeddings
+      const hybridSearch = or([
+        userInput("@query", hits),
+        nearestNeighbor("chunk_embeddings", "e", hits),
+      ])
+
+      if (filterConditions.length > 0) {
+        // Parenthesize hybrid search to ensure proper precedence: (A or B or C) and filter1 and filter2
+        finalCondition = and([hybridSearch.parenthesize(), ...filterConditions])
+      } else {
+        finalCondition = hybridSearch
+      }
+    } else {
+      // No hybrid search - only use filter conditions for GetItems/list queries
+      if (filterConditions.length > 0) {
+        finalCondition = and(filterConditions)
+      } else {
+        // Graceful fallback: scope to ZohoDesk tickets instead of throwing
+        finalCondition = contains("app", Apps.ZohoDesk)
+      }
+    }
+
+    this.logger.info("[YQL Formation] buildZohoDeskCondition final condition", {
+      queryProvided: shouldIncludeHybridSearch,
+      filterConditionsCount: filterConditions.length,
+      finalYql: finalCondition.toString(),
+    })
+
+    return finalCondition
+  }
+
   // Enhanced Slack condition that supports additional filters like senderId
   private buildEnhancedSlackCondition(
     hits: number,
@@ -880,6 +1262,7 @@ export class VespaService {
     selectedItem: Record<string, unknown> = {},
     email?: string,
     appFilters: Partial<Record<Apps, AppFilter[]>> = {},
+    query: string = "",
   ): YqlProfile => {
     const appQueries: YqlCondition[] = []
     const sources = new Set<VespaSchema>()
@@ -1192,11 +1575,78 @@ export class VespaService {
             )
           }
           break
+
+        case Apps.ZohoDesk:
+          // Build Zoho Desk condition with appFilters
+          const zohoDeskFilters = appFilters[Apps.ZohoDesk] || []
+          const zohoDeskFilterConditions: YqlCondition[] = []
+
+          // Handle multiple filter groups
+          if (
+            zohoDeskFilters &&
+            Array.isArray(zohoDeskFilters) &&
+            zohoDeskFilters.length > 0
+          ) {
+            // Process multiple filter groups
+            for (const filter of zohoDeskFilters) {
+              const mergedTimestampRange = filter.timeRange
+                ? this.mergeTimestampRanges(
+                    timestampRange,
+                    filter.timeRange,
+                    Apps.ZohoDesk,
+                  )
+                : timestampRange
+
+              zohoDeskFilterConditions.push(
+                this.buildZohoDeskCondition(
+                  hits,
+                  app,
+                  entity,
+                  mergedTimestampRange,
+                  filter,
+                  query,
+                ),
+              )
+            }
+          }
+
+          // Build final Zoho Desk condition
+          if (zohoDeskFilterConditions.length > 0) {
+            // Each filter group already contains hybrid search + filters from buildZohoDeskCondition
+            // Just OR them together
+            appQueries.push(or(zohoDeskFilterConditions))
+          } else {
+            // No filters, use standard condition
+            appQueries.push(
+              this.buildZohoDeskCondition(
+                hits,
+                app,
+                entity,
+                timestampRange,
+                undefined,
+                query,
+              ),
+            )
+          }
+
+          sources.add(ticketSchema)
+          break
       }
     }
 
     if (allowedApps?.length) {
-      allowedApps.forEach(handleApp)
+      // Special handling: if app is specifically ZohoDesk OR we have Zoho filters, only search tickets
+      const hasZohoFilters =
+        appFilters[Apps.ZohoDesk] && appFilters[Apps.ZohoDesk]!.length > 0
+
+      if (
+        (app === Apps.ZohoDesk || hasZohoFilters) &&
+        allowedApps.includes(Apps.ZohoDesk)
+      ) {
+        handleApp(Apps.ZohoDesk)
+      } else {
+        allowedApps.forEach(handleApp)
+      }
     } else if (dataSourceIds?.length) {
       // fallback: only data sources
       appQueries.push(this.buildDataSourceFileYQL(hits, selectedItem))
@@ -1229,7 +1679,9 @@ export class VespaService {
     if (entity) yqlBuilder.filterByEntity(entity)
     if (excludedIds?.length) yqlBuilder.excludeDocIds(excludedIds)
 
-    return yqlBuilder.buildProfile(profile)
+    const result = yqlBuilder.buildProfile(profile)
+
+    return result
   }
 
   HybridDefaultProfileInFiles = (
@@ -1400,6 +1852,8 @@ export class VespaService {
               return acc.concat([eventSchema])
             case Apps.GoogleWorkspace:
               return acc.concat([userSchema])
+            case Apps.ZohoDesk:
+              return acc.concat([ticketSchema])
             default:
               return acc
           }
@@ -1655,6 +2109,10 @@ export class VespaService {
               sources.push(chatMessageSchema)
             conditions.push(contains("app", Apps.Slack))
             break
+          case Apps.ZohoDesk:
+            if (!sources.includes(ticketSchema)) sources.push(ticketSchema)
+            conditions.push(contains("app", Apps.ZohoDesk))
+            break
           case Apps.DataSource:
             if (dataSourceIds && dataSourceIds.length > 0) {
               if (!sources.includes(dataSourceFileSchema))
@@ -1754,7 +2212,7 @@ export class VespaService {
       excludedApps,
       email,
     )
-    // console.log("Vespa YQL Query in group vespa: ", formatYqlToReadable(yql))
+
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1801,6 +2259,7 @@ export class VespaService {
       attendees = null,
       eventStatus = null,
       processedCollectionSelections = {},
+      appFilters = {},
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Filter out attachment app and entities if present
@@ -1831,6 +2290,7 @@ export class VespaService {
       attendees,
       eventStatus,
       processedCollectionSelections,
+      appFilters,
     })
   }
 
@@ -1862,6 +2322,7 @@ export class VespaService {
       attendees = null,
       eventStatus = null,
       processedCollectionSelections,
+      appFilters = {},
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
     // Determine the timestamp cutoff based on lastUpdated
@@ -1899,8 +2360,10 @@ export class VespaService {
       attendees,
       eventStatus,
       processedCollectionSelections,
+      appFilters,
+      query,
     )
-    // console.log("Vespa YQL Query in search vespa: ", formatYqlToReadable(yql))
+
     const hybridDefaultPayload = {
       yql,
       query,
@@ -1961,7 +2424,6 @@ export class VespaService {
       email,
     )
 
-    // console.log("Vespa YQL Query: in files ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2100,9 +2562,9 @@ export class VespaService {
       selectedItem,
       email,
       appFilters, // Pass appFilters to the profile builder
+      query,
     )
 
-    // console.log("Vespa YQL Query: for agent ", formatYqlToReadable(yql))
     const hybridDefaultPayload = {
       yql,
       query,
@@ -2679,6 +3141,60 @@ export class VespaService {
       conditions.push(or(channelIdConditions))
     }
 
+    if (
+      includesApp(Apps.ZohoDesk) &&
+      appFilters[Apps.ZohoDesk] &&
+      Array.isArray(appFilters[Apps.ZohoDesk])
+    ) {
+      this.logger.info(
+        "[YQL Formation] Processing Zoho Desk appFilters",
+        appFilters[Apps.ZohoDesk],
+      )
+
+      const zohoDeskFilters = appFilters[Apps.ZohoDesk]
+      const zohoDeskFilterConditions: YqlCondition[] = []
+
+      // Process multiple filter groups
+      for (const filter of zohoDeskFilters) {
+        const groupConditions: YqlCondition[] = []
+
+        // Merge global timestampRange with filter-specific timeRange (if present)
+        const mergedTimestampRange = filter.timeRange
+          ? this.mergeTimestampRanges(
+              timestampRange,
+              filter.timeRange,
+              Apps.ZohoDesk,
+            )
+          : timestampRange
+
+        // Build Zoho Desk condition using the existing helper function
+        // Pass undefined for query since GetItems has no search query
+        const zohoDeskCondition = this.buildZohoDeskCondition(
+          limit,
+          app ?? null,
+          entity ?? null,
+          mergedTimestampRange,
+          filter,
+          undefined, // No query for GetItems (filter-only)
+        )
+        groupConditions.push(zohoDeskCondition)
+
+        this.logger.info(
+          "[YQL Formation] Built Zoho Desk condition",
+          zohoDeskCondition.toString(),
+        )
+
+        // If this filter group has conditions, add them as an AND group
+        if (groupConditions.length > 0) {
+          zohoDeskFilterConditions.push(and(groupConditions))
+        }
+      }
+
+      if (zohoDeskFilterConditions.length > 0) {
+        conditions.push(or(zohoDeskFilterConditions))
+      }
+    }
+
     let timestampField = []
 
     // Choose appropriate timestamp field based on schema
@@ -2699,6 +3215,27 @@ export class VespaService {
       timestampField.push("startTime")
     } else if (schemas.includes(userSchema)) {
       timestampField.push("creationTime")
+    } else if (schemas.includes(ticketSchema)) {
+      // For Zoho Desk, support dynamic timestamp field selection
+      // Supported fields: createdTime, modifiedTime, closedTime, dueDate
+      let zohoTimestampField = "createdTime" // Default to createdTime for backward compatibility
+
+      // Check if appFilters specifies a timestamp field for Zoho Desk
+      if (
+        appFilters[Apps.ZohoDesk] &&
+        Array.isArray(appFilters[Apps.ZohoDesk])
+      ) {
+        const zohoFilters = appFilters[Apps.ZohoDesk]
+        // Use timestampField from first filter that specifies it
+        for (const filter of zohoFilters) {
+          if (filter.zoho?.timestampField) {
+            zohoTimestampField = filter.zoho.timestampField
+            break
+          }
+        }
+      }
+
+      timestampField.push(zohoTimestampField)
     } else {
       timestampField.push("updatedAt")
     }
@@ -2780,6 +3317,7 @@ export class VespaService {
         : contains("entity", entity)
     }
 
+    // Determine permission sources for correct permission handling
     const yqlBuilder = YqlBuilder.create({
       userId: email,
       requirePermissions: true,
@@ -2838,7 +3376,6 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.offset(offset ?? 0).build()
-    console.log("Vespa YQL Query in getItems: ", formatYqlToReadable(yql))
     this.logger.info(`[getItems] Query Details:`, {
       schema,
       app,
@@ -2848,6 +3385,7 @@ export class VespaService {
       mailParticipantsProvided: !!mailParticipants,
       conditions: conditions.length > 0 ? conditions : "none",
     })
+    this.logger.info(`[getItems] Final YQL:`, formatYqlToReadable(yql))
 
     const searchPayload = {
       yql,
@@ -3370,10 +3908,7 @@ export class VespaService {
       agentChannelIds: agentSelectedChannelIds,
       offset,
     })
-    // console.log(
-    //   "Vespa YQL Query in searchSlackMessages: ",
-    //   formatYqlToReadable(yql),
-    // )
+
     if (!yql || yql.trim() === "") {
       return vespaEmptyResponse()
     }
@@ -3511,7 +4046,6 @@ export class VespaService {
         offset,
         timeout: "15s",
       }
-      // console.log(yql)
 
       this.logger.info(
         `Fetching all Slack ${config.entityName}s (page ${Math.floor(offset / limit) + 1})`,
@@ -3605,14 +4139,6 @@ export class VespaService {
     alpha: number = 0.5,
     rankProfile: SearchModes = SearchModes.NativeRank,
   ): Promise<VespaSearchResponse> => {
-    if (!query || query.trim().length === 0) {
-      this.logger.warn("searchCollectionRAG called with empty query")
-      throw new ErrorPerformingSearch({
-        cause: new Error("empty query string"),
-        sources: KbItemsSchema,
-      })
-    }
-
     // Construct RAG YQL query - hybrid search with both text and vector search
     // This combines BM25 text search with vector similarity search
     const conditions: YqlCondition[] = [
@@ -3642,7 +4168,7 @@ export class VespaService {
 
     const searchPayload = {
       yql: yql,
-      query: query.trim(),
+      query,
       "ranking.profile": rankProfile,
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": alpha,
@@ -3655,7 +4181,7 @@ export class VespaService {
       const response =
         await this.vespa.search<VespaSearchResponse>(searchPayload)
       this.logger.info(
-        `[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${query.trim()}"`,
+        `[searchCollectionRAG] Found ${response.root?.children?.length || 0} documents for query: "${query}"`,
       )
 
       return response
@@ -3663,7 +4189,7 @@ export class VespaService {
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
         sources: KbItemsSchema,
-        message: `searchCollectionRAG failed for query: "${query.trim()}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
+        message: `searchCollectionRAG failed for query: "${query}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
       })
       this.logger.error(searchError, "Error in searchCollectionRAG function")
       throw searchError
@@ -3812,10 +4338,6 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.build()
-    // console.log(
-    //   "Vespa YQL Query in searchGoogleApps: ",
-    //   formatYqlToReadable(yql),
-    // )
     const searchPayload = {
       yql: yql,
       ...(query
@@ -3846,6 +4368,144 @@ export class VespaService {
         message: `searchGoogleApps failed for app: ${app}`,
       })
       this.logger.error(searchError, "Error in searchGoogleApps function")
+      throw searchError
+    }
+  }
+
+  searchZohoDeskTickets = async ({
+    email,
+    query,
+    limit = this.config.page,
+    offset = 0,
+    sortBy = "desc",
+    timeRange,
+    ticketNumbers,
+    statuses,
+    priorities,
+    classifications,
+    departmentNames,
+    assigneeEmails,
+    channels,
+    categories,
+    subCategories,
+    productNames,
+    teamNames,
+    accountNames,
+    contactEmails,
+    merchantIds,
+    to,
+    cc,
+    bcc,
+    isOverDue,
+    isResponseOverdue,
+    isEscalated,
+    excludeDocIds,
+    alpha = 0.5,
+    rankProfile = SearchModes.NativeRank,
+  }: SearchZohoDeskParams): Promise<VespaSearchResponse> => {
+    const sources = ticketSchema
+
+    // Use email directly as userId for permission checks
+    const userIdValue: string = email
+
+    // Map SearchZohoDeskParams to AppFilter format
+    const filters: AppFilter = {
+      to,
+      cc,
+      bcc,
+      zoho: {
+        ticketNumber: ticketNumbers,
+        status: statuses,
+        priority: priorities,
+        classification: classifications,
+        // departmentId field in AppFilter is for filtering specific departments
+        // If departmentNames is provided, use it for filtering
+        departmentName: departmentNames,
+        assigneeEmail: assigneeEmails,
+        channel: channels,
+        category: categories,
+        subCategory: subCategories,
+        productName: productNames,
+        teamName: teamNames,
+        accountName: accountNames,
+        contactEmail: contactEmails, // Updated to match schema field name
+        merchantId: merchantIds, // Updated to match schema field name (removed cf_ prefix)
+        isOverDue,
+        isResponseOverdue,
+        isEscalated,
+      },
+      timeRange: timeRange
+        ? {
+            startDate: timeRange.startTime,
+            endDate: timeRange.endTime,
+          }
+        : undefined,
+    }
+
+    // Reuse buildZohoDeskCondition to build WHERE conditions
+    const whereCondition = this.buildZohoDeskCondition(
+      limit,
+      Apps.ZohoDesk,
+      null,
+      timeRange
+        ? {
+            from: timeRange.startTime ?? null,
+            to: timeRange.endTime ?? null,
+          }
+        : null,
+      filters,
+      query, // Pass query to enable hybrid search when query is provided
+    )
+
+    // Build complete YQL query
+    // Use email as userId for permission checks
+    const yqlBuilder = YqlBuilder.create({
+      userId: userIdValue,
+      requirePermissions: true,
+    })
+      .from(sources)
+      .where(whereCondition)
+      .orderBy("createdTime", sortBy)
+      .limit(limit)
+      .offset(offset)
+
+    if (excludeDocIds && excludeDocIds.length > 0) {
+      yqlBuilder.excludeDocIds(excludeDocIds)
+    }
+
+    const yql = yqlBuilder.build()
+    const normalizedQuery = query?.trim()
+
+    const searchPayload = {
+      yql,
+      ...(normalizedQuery
+        ? {
+            query: normalizedQuery,
+            "input.query(e)": "embed(@query)",
+          }
+        : {}),
+      "ranking.profile": rankProfile,
+      hits: limit,
+      offset,
+      timeout: "30s",
+      ...(alpha !== undefined && { "input.query(alpha)": alpha }),
+    }
+
+    try {
+      const response =
+        await this.vespa.search<VespaSearchResponse>(searchPayload)
+      this.logger.info(
+        `[searchZohoDeskTickets] Found ${response.root?.children?.length || 0} documents`,
+      )
+
+      return response
+    } catch (error) {
+      const searchError = new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: sources,
+        message: `searchZohoDeskTickets failed`,
+      })
+      this.logger.error(searchError, "Error in searchZohoDeskTickets function")
       throw searchError
     }
   }
