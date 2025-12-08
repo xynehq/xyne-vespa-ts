@@ -444,7 +444,9 @@ export class VespaService {
         yqlBuilder.excludeDocIds(excludedIds)
       }
 
-      return yqlBuilder.buildProfile(profile)
+      const result = yqlBuilder.buildProfile(profile)
+      console.log("[HybridDefaultProfile] Final YQL:", result.yql)
+      return result
     } catch (error) {
       this.logger.error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
       throw new Error(`Failed to build YQL profile: ${JSON.stringify(error)}`)
@@ -1081,10 +1083,9 @@ export class VespaService {
     // before combining with AND.
     let finalCondition: YqlCondition
 
-    // Determine if we should include hybrid search based on query presence
-    // If query is undefined, it's a getItems operation (filter-only)
-    // If query is defined (even if empty string), it's a search operation (include hybrid search)
-    const shouldIncludeHybridSearch = query !== undefined
+    // Determine if we should include hybrid search based on non-empty query
+    const normalizedQuery = query?.trim()
+    const shouldIncludeHybridSearch = !!normalizedQuery
 
     if (shouldIncludeHybridSearch) {
       // Create hybrid search: BM25 + semantic embeddings
@@ -1104,10 +1105,8 @@ export class VespaService {
       if (filterConditions.length > 0) {
         finalCondition = and(filterConditions)
       } else {
-        // If no filters at all, create a dummy condition (should not happen in practice)
-        throw new Error(
-          "buildZohoDeskCondition: No search query and no filters provided",
-        )
+        // Graceful fallback: scope to ZohoDesk tickets instead of throwing
+        finalCondition = contains("app", Apps.ZohoDesk)
       }
     }
 
@@ -1692,7 +1691,9 @@ export class VespaService {
     if (entity) yqlBuilder.filterByEntity(entity)
     if (excludedIds?.length) yqlBuilder.excludeDocIds(excludedIds)
 
-    return yqlBuilder.buildProfile(profile)
+    const result = yqlBuilder.buildProfile(profile)
+    console.log("[HybridDefaultProfileForAgent] Final YQL:", result.yql)
+    return result
   }
 
   HybridDefaultProfileInFiles = (
@@ -4465,6 +4466,7 @@ export class VespaService {
           }
         : null,
       filters,
+      query, // Pass query to enable hybrid search when query is provided
     )
 
     // Build complete YQL query
@@ -4484,18 +4486,23 @@ export class VespaService {
     }
 
     const yql = yqlBuilder.build()
+    const normalizedQuery = query?.trim()
+
+    console.log("[searchZohoDeskTickets] Final YQL:", yql)
 
     const searchPayload = {
-      yql: yql,
-      ...(query
+      yql,
+      ...(normalizedQuery
         ? {
-            query: query.trim(),
+            query: normalizedQuery,
             "input.query(e)": "embed(@query)",
           }
         : {}),
-      ranking: { profile: rankProfile },
-      offset: offset,
-      ...(alpha && { "input.query(alpha)": alpha }),
+      "ranking.profile": rankProfile,
+      hits: limit,
+      offset,
+      timeout: "30s",
+      ...(alpha !== undefined && { "input.query(alpha)": alpha }),
     }
 
     try {
