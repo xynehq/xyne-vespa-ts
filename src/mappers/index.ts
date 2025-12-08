@@ -58,6 +58,12 @@ import {
   type AppEntityCounts,
   chatContainerSchema,
   ChatContainerResponseSchema,
+  ticketSchema,
+  ZohoTicketResponseSchema,
+  type VespaZohoTicketSearch,
+  ZohoEntity,
+  AutocompleteZohoTicketSchema,
+  type VespaAutocompleteZohoTicket,
 } from "../types"
 
 import type { z } from "zod"
@@ -353,6 +359,16 @@ export const VespaSearchResponseToSearchResult = (
               matchfeatures: dsFields.matchfeatures,
             }
             return DataSourceFileResponseSchema.parse(mappedResult)
+          } else if (
+            (child.fields as VespaZohoTicketSearch).sddocname === ticketSchema
+          ) {
+            const fields = child.fields as VespaZohoTicketSearch & {
+              type?: string
+              chunks_summary?: string[]
+            }
+            fields.type = ticketSchema
+            fields.relevance = child.relevance
+            return ZohoTicketResponseSchema.parse(fields)
           } else {
             throw new Error(
               `Unknown schema type: ${(child.fields as any)?.sddocname ?? "undefined"}`,
@@ -437,6 +453,13 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = chatUserSchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteChatUserSchema.parse(child.fields)
+        } else if (
+          (child.fields as VespaAutocompleteZohoTicket).sddocname ===
+          ticketSchema
+        ) {
+          ;(child.fields as any).type = ticketSchema
+          ;(child.fields as any).relevance = child.relevance
+          return AutocompleteZohoTicketSchema.parse(child.fields)
         } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,
@@ -513,6 +536,9 @@ export const entityToSchemaMapper = (
     ...Object.fromEntries(
       Object.values(SlackEntity).map((e) => [e, chatMessageSchema]),
     ),
+    ...Object.fromEntries(
+      Object.values(ZohoEntity).map((e) => [e, ticketSchema]),
+    ),
   }
 
   // Handle cases where the same entity name exists in multiple schemas
@@ -539,6 +565,8 @@ export const appToSchemaMapper = (appName?: string): VespaSchema | null => {
     ["googlecalendar"]: eventSchema, // Alias for convenience
     [Apps.Slack.toLowerCase()]: chatMessageSchema,
     [Apps.DataSource.toLowerCase()]: dataSourceFileSchema,
+    [Apps.ZohoDesk.toLowerCase()]: ticketSchema,
+    ["zohodesk"]: ticketSchema, // Alias for convenience
   }
   return schemaMap[lowerAppName] || null
 }
