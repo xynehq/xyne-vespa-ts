@@ -28,6 +28,10 @@ const andWithPermissions = (conditions: YqlCondition[]): And =>
   new And(conditions, { requirePermissions: true })
 const orWithPermissions = (conditions: YqlCondition[]): Or =>
   new Or(conditions, { requirePermissions: true })
+const andWithoutPermissions = (conditions: YqlCondition[]): And =>
+  And.withoutPermissions(conditions)
+const orWithoutPermissions = (conditions: YqlCondition[]): Or =>
+  Or.withoutPermissions(conditions)
 
 const not = (condition: YqlCondition): Not => new Not(condition)
 const parenthesize = (condition: YqlCondition): Parenthesized =>
@@ -82,6 +86,8 @@ export {
   or,
   andWithPermissions,
   orWithPermissions,
+  andWithoutPermissions,
+  orWithoutPermissions,
   not,
   parenthesize,
   timestamp,

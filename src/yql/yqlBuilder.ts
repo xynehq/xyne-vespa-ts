@@ -209,7 +209,7 @@ export class YqlBuilder {
    */
   whereAnd(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(this.createAnd(conditions).parenthesize())
+      this.whereConditions.push(and(conditions).parenthesize())
     }
     return this
   }
@@ -219,7 +219,7 @@ export class YqlBuilder {
    */
   whereOr(...conditions: YqlCondition[]): this {
     if (conditions.length > 0) {
-      this.whereConditions.push(this.createOr(conditions).parenthesize())
+      this.whereConditions.push(or(conditions).parenthesize())
     }
     return this
   }
@@ -284,10 +284,10 @@ export class YqlBuilder {
     const apps = Array.isArray(app) ? app : [app]
 
     if (apps.length === 1) {
-      this.appCondition = this.createAnd([contains("app", apps[0]!)])
+      this.appCondition = and([contains("app", apps[0]!)])
     } else if (apps.length > 1) {
       const conditions = apps.map((a) => contains("app", a))
-      this.appCondition = this.createOr(conditions)
+      this.appCondition = or(conditions)
     }
 
     return this
@@ -300,10 +300,10 @@ export class YqlBuilder {
     const entities = Array.isArray(entity) ? entity : [entity]
 
     if (entities.length === 1) {
-      this.entityCondition = this.createAnd([contains("entity", entities[0]!)])
+      this.entityCondition = and([contains("entity", entities[0]!)])
     } else if (entities.length > 1) {
       const conditions = entities.map((e) => contains("entity", e))
-      this.entityCondition = this.createOr(conditions)
+      this.entityCondition = or(conditions)
     }
 
     return this
@@ -470,11 +470,11 @@ export class YqlBuilder {
 
     if (this.whereConditions.length > 0) {
       let combinedConditions: YqlCondition
-      // Don't add permissions here - let recursivelyApplyPermissions handle it
+      // Don't add permissions here - let applyTopLevelPermissions handle it
       if (this.whereConditions.length === 1) {
         combinedConditions = this.whereConditions[0]!
       } else {
-        combinedConditions = Or.withoutPermissions(this.whereConditions)
+        combinedConditions = or(this.whereConditions)
       }
       allConditions.push(combinedConditions)
     }
@@ -513,7 +513,11 @@ export class YqlBuilder {
     if (allConditions.length === 1) {
       finalCondition = allConditions[0]!
     } else {
-      finalCondition = this.createAnd(allConditions)
+      // If any condition bypasses permission checks, wrap the combined condition
+      // without permissions. Permissions will be applied recursively at the final stage.
+      finalCondition = this.hasAnyBypassedPermissions(and(allConditions))
+        ? And.withoutPermissions(allConditions)
+        : and(allConditions)
     }
 
     const isOnlyKbSource =
@@ -561,9 +565,37 @@ export class YqlBuilder {
   }
 
   /**
-   * Apply permissions to each OR condition individually
+   * Check if any condition in the tree has bypassed permission
+   */
+  private hasAnyBypassedPermissions(condition: YqlCondition): boolean {
+    if (condition instanceof And || condition instanceof Or) {
+      if (condition.isPermissionBypassed()) {
+        return true
+      }
+      // Check children recursively
+      return condition
+        .getConditions()
+        .some((child) => this.hasAnyBypassedPermissions(child))
+    }
+    return false
+  }
+
+  /**
+   * Apply permissions either at global level or to each clause individually
    */
   private applyTopLevelPermissions(condition: YqlCondition): YqlCondition {
+    const hasBypassedPermissions = this.hasAnyBypassedPermissions(condition)
+    // If no bypassed permissions exist, apply permissions at global level
+    if (!hasBypassedPermissions) {
+      const permissionCondition = this.buildPermissionCondition()
+      if (permissionCondition) {
+        const parenthesizedCondition = this.parenthesisConditions(condition)
+        return and([parenthesizedCondition, permissionCondition])
+      }
+      return this.parenthesisConditions(condition)
+    }
+
+    // If there are bypassed permissions, apply recursively
     return this.recursivelyApplyPermissions(condition)
   }
 
