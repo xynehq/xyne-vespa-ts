@@ -676,7 +676,7 @@ export class VespaService {
     } else if (entity && !Array.isArray(entity)) {
       ownershipBasedConditions.push(contains("entity", entity))
     }
-
+    ownershipBasedConditions.push(contains("app", Apps.GoogleWorkspace))
     const ownershipBasedQuery = and(ownershipBasedConditions)
 
     return Or.withoutPermissions([permissionBasedQuery, ownershipBasedQuery])
@@ -698,6 +698,7 @@ export class VespaService {
         nearestNeighbor("chunk_embeddings", "e", hits),
       ]),
     )
+    conditions.push(contains("app", Apps.Gmail))
 
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(timestamp("timestamp", "timestamp", timestampRange))
@@ -747,7 +748,7 @@ export class VespaService {
         nearestNeighbor("chunk_embeddings", "e", hits),
       ]),
     )
-
+    conditions.push(contains("app", Apps.GoogleDrive))
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
@@ -773,7 +774,7 @@ export class VespaService {
         nearestNeighbor("chunk_embeddings", "e", hits),
       ]),
     )
-
+    conditions.push(contains("app", Apps.GoogleCalendar))
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(timestamp("startTime", "startTime", timestampRange))
     }
@@ -796,7 +797,7 @@ export class VespaService {
         nearestNeighbor("text_embeddings", "e", hits),
       ]),
     )
-
+    conditions.push(contains("app", Apps.Slack))
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
@@ -1133,7 +1134,7 @@ export class VespaService {
         nearestNeighbor("text_embeddings", "e", hits),
       ]),
     )
-
+    conditions.push(contains("app", Apps.Slack))
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
     }
@@ -1165,7 +1166,12 @@ export class VespaService {
         nearestNeighbor("chunk_embeddings", "e", hits),
       ]),
     )
-
+    conditions.push(
+      or([
+        contains("app", Apps.GoogleDrive),
+        contains("app", Apps.GoogleCalendar),
+      ]),
+    )
     if (timestampRange && (timestampRange.from || timestampRange.to)) {
       const timestampConds = []
       if (includedApps?.includes(Apps.GoogleCalendar)) {
@@ -1398,6 +1404,7 @@ export class VespaService {
 
             // Add combined filter conditions (OR between multiple filter groups)
             baseConditions.push(or(gmailFilterConditions))
+            baseConditions.push(or([contains("app", Apps.Gmail)]))
 
             appQueries.push(and(baseConditions))
           } else {
@@ -1536,6 +1543,7 @@ export class VespaService {
 
             // Add combined filter conditions (OR between multiple filter groups)
             baseConditions.push(or(slackFilterConditions))
+            baseConditions.push(or([contains("app", Apps.Slack)]))
 
             appQueries.push(and(baseConditions))
           } else {
@@ -2371,6 +2379,10 @@ export class VespaService {
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": alpha,
+      "input.query(slackBoost)": 4.0,
+      "input.query(fileBoost)": 4.0,
+      "input.query(mailBoost)": 4.0,
+      "input.query(eventBoost)": 4.0,
       "input.query(recency_decay_rate)": recencyDecayRate,
       "input.query(is_intent_search)": isIntentSearch ? 1.0 : 0.0,
       maxHits,
@@ -2572,6 +2584,10 @@ export class VespaService {
       "ranking.profile": profile,
       "input.query(e)": "embed(@query)",
       "input.query(alpha)": alpha,
+      "input.query(slackBoost)": 4.0,
+      "input.query(fileBoost)": 4.0,
+      "input.query(mailBoost)": 4.0,
+      "input.query(eventBoost)": 4.0,
       "input.query(recency_decay_rate)": recencyDecayRate,
       maxHits,
       hits: limit,
