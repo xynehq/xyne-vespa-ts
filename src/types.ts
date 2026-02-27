@@ -62,6 +62,7 @@ export enum Apps {
   Github = "github",
   Xyne = "xyne",
   DataSource = "data-source",
+  Database = "database",
   KnowledgeBase = "KnowledgeBase",
   WebSearch = "web-search",
 
@@ -85,6 +86,10 @@ export enum KnowledgeBaseEntity {
   Folder = "folder", // Folders within collections
   Collection = "collection", // Collections (main containers)
   KnowledgeBase = "knowledgebase", // Legacy alias for collection
+}
+
+export enum DatabaseEntity {
+  Record = "db_record",
 }
 
 export enum AttachmentEntity {
@@ -219,7 +224,7 @@ export const WebSearchEntitySchema = z.nativeEnum(WebSearchEntity)
 export const KnowledgeBaseEntitySchema = z.nativeEnum(KnowledgeBaseEntity)
 export const ZohoEntitySchema = z.nativeEnum(ZohoEntity)
 const NotionEntitySchema = z.nativeEnum(NotionEntity)
-
+const DatabaseEntitySchema = z.nativeEnum(DatabaseEntity)
 export type MicrosoftPeopleEntityType = z.infer<
   typeof MicrosoftPeopleEntitySchema
 >
@@ -238,6 +243,7 @@ export const entitySchema = z.union([
   KnowledgeBaseEntitySchema,
   MicrosoftPeopleEntitySchema,
   ZohoEntitySchema,
+  DatabaseEntitySchema,
 ])
 
 export type Entity =
@@ -255,7 +261,7 @@ export type Entity =
   | MicrosoftPeopleEntityType
   | AttachmentEntity
   | ZohoEntity
-
+  | DatabaseEntity
 export type WorkspaceEntity = DriveEntity
 
 export const scoredChunk = z.object({
