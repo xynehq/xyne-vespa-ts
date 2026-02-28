@@ -1478,6 +1478,7 @@ export const APP_INTEGRATION_MAPPING: Record<string, Apps> = {
   googlecalendar: Apps.GoogleCalendar,
   slack: Apps.Slack,
   datasource: Apps.DataSource,
+  database: Apps.Database,
   "google-workspace": Apps.GoogleWorkspace,
   googledocs: Apps.GoogleDrive,
   googlesheets: Apps.GoogleDrive,
