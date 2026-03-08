@@ -1298,6 +1298,7 @@ const VespaAutocompleteKbFileSchema = z
     docId: z.string(),
     fileName: z.string(),
     app: z.nativeEnum(Apps).optional(),
+    entity: KnowledgeBaseEntitySchema.optional(),
     sddocname: z.literal(KbItemsSchema),
   })
   .merge(defaultVespaFieldsSchema)
