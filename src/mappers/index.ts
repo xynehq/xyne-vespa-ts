@@ -69,6 +69,7 @@ import {
   type VespaKbFileSearch,
   AutocompleteKbFileSchema,
   KnowledgeBaseEntity,
+  KnowledgeBaseEntitySchema,
 } from "../types"
 
 import type { z } from "zod"
@@ -502,13 +503,23 @@ export const VespaAutocompleteResponseToResult = (
             docId: string
             fileName: string
             app?: Apps
+            entity?: string
           }
+          const rawEntity = fields.entity
+          const entityResult =
+            rawEntity !== undefined && rawEntity !== null
+              ? KnowledgeBaseEntitySchema.safeParse(rawEntity)
+              : null
+          const entity =
+            entityResult?.success === true
+              ? entityResult.data
+              : KnowledgeBaseEntity.File
           return AutocompleteKbFileSchema.parse({
             type: KbItemsSchema,
             relevance: child.relevance,
             title: fields.fileName ?? "",
             app: Apps.KnowledgeBase,
-            entity: KnowledgeBaseEntity.File,
+            entity,
             docId: fields.docId,
           })
         } else {

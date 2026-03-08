@@ -264,18 +264,23 @@ export class VespaService {
     return resp
   }
 
-  /** Merges two VespaAutocompleteResponse by concatenating root.children. */
+  /** Merges two VespaAutocompleteResponse, sorts by relevance (highest first), and returns at most limit children. */
   private mergeAutocompleteResponses(
     main: VespaAutocompleteResponse,
     kb: VespaAutocompleteResponse,
+    limit: number,
   ): VespaAutocompleteResponse {
     const mainChildren = main?.root?.children ?? []
     const kbChildren = kb?.root?.children ?? []
+    const combined = [...mainChildren, ...kbChildren].sort(
+      (a, b) => (b.relevance ?? 0) - (a.relevance ?? 0),
+    )
+    const children = combined.slice(0, limit)
     return {
       ...main,
       root: {
         ...main.root,
-        children: [...mainChildren, ...kbChildren],
+        children,
       },
     }
   }
@@ -284,7 +289,6 @@ export class VespaService {
     query: string,
     email: string,
     limit: number = 5,
-    includeKnowledgeBaseInAutocomplete = false,
   ): Promise<VespaAutocompleteResponse> => {
     const sources = [
       ...new Set<VespaSchema>([...this.getSchemaSources(), userQuerySchema]),
@@ -328,9 +332,6 @@ export class VespaService {
 
     try {
       const mainResponse = await this.vespa.autoComplete(searchPayload)
-      if (!includeKnowledgeBaseInAutocomplete) {
-        return mainResponse
-      }
       const kbYql = YqlBuilder.create({
         userId: email,
         requirePermissions: false,
@@ -355,7 +356,7 @@ export class VespaService {
         timeout: "5s",
       }
       const kbResponse = await this.vespa.autoComplete(kbPayload)
-      return this.mergeAutocompleteResponses(mainResponse, kbResponse)
+      return this.mergeAutocompleteResponses(mainResponse, kbResponse, limit)
     } catch (error) {
       this.logger.error(`Autocomplete failed with error:`, error)
       throw new ErrorPerformingSearch({
@@ -363,6 +364,7 @@ export class VespaService {
         cause: error as Error,
         sources: "file",
       })
+      // TODO: instead of null just send empty response
     }
   }
 
@@ -1933,13 +1935,21 @@ export class VespaService {
 
   /**
    * Group-by profile for knowledge base only. Used when
-   * includeKnowledgeBaseInSearch is true to run a second group search and merge counts.
+   * Applies the same active-scope filters (e.g. timestampRange) as the main search so counts reflect the merged view.
    */
   HybridDefaultProfileAppEntityCountsKnowledgeBaseOnly = (
     hits: number,
     searchMode: SearchModes,
     email: string,
+    timestampRange?: { to: number | null; from: number | null } | null,
   ): YqlProfile => {
+    const conditions: YqlCondition[] = [contains("createdBy", email.trim())]
+    if (
+      timestampRange &&
+      (timestampRange.from != null || timestampRange.to != null)
+    ) {
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    }
     return YqlBuilder.create({
       userId: email,
       requirePermissions: false,
@@ -1947,7 +1957,7 @@ export class VespaService {
       targetHits: hits,
     })
       .from([KbItemsSchema])
-      .where(contains("createdBy", email.trim()))
+      .where(and(conditions))
       .limit(0)
       .groupBy(`
         all(
@@ -1959,37 +1969,17 @@ export class VespaService {
       .buildProfile(searchMode)
   }
 
-  /** Merges two AppEntityCounts by summing counts per app/entity. */
-  private mergeAppEntityCounts(
-    a: AppEntityCounts,
-    b: AppEntityCounts,
-  ): AppEntityCounts {
-    const merged: AppEntityCounts = { ...a }
-    for (const app of Object.keys(b)) {
-      const entityCounts = b[app]
-      if (!entityCounts || typeof entityCounts !== "object") continue
-      merged[app] = { ...(merged[app] ?? {}) }
-      for (const entity of Object.keys(entityCounts)) {
-        merged[app][entity] =
-          (merged[app]?.[entity] ?? 0) + (entityCounts[entity] ?? 0)
-      }
-    }
-    return merged
-  }
-
   /**
-   * Hybrid search profile for knowledge base (dataSourceFile) only, without
-   * filtering by dataSourceIds. Used when includeKnowledgeBaseInSearch is true.
+   * Hybrid search profile for knowledge base only.
    */
   HybridDefaultProfileKnowledgeBaseOnly = (
     limit: number,
     rankProfile: SearchModes,
     email: string,
   ): YqlProfile => {
-    const searchCondition = Or.withoutPermissions([
+    const relevanceCondition = Or.withoutPermissions([
       userInput("@query", limit),
       nearestNeighbor("chunk_embeddings", "e", limit),
-      contains("createdBy", email.trim()),
     ])
     const yql = YqlBuilder.create({
       userId: email,
@@ -1998,31 +1988,14 @@ export class VespaService {
       targetHits: limit,
     })
       .from([KbItemsSchema])
-      .where(and([And.withoutPermissions([searchCondition])]))
+      .where(
+        and([
+          And.withoutPermissions([relevanceCondition]),
+          contains("createdBy", email.trim()),
+        ]),
+      )
       .buildProfile(rankProfile)
     return yql
-  }
-
-  /** Merges two VespaSearchResponse by concatenating children and summing totalCount. */
-  private mergeVespaSearchResponses(
-    main: VespaSearchResponse,
-    kb: VespaSearchResponse,
-  ): VespaSearchResponse {
-    const mainChildren = main?.root?.children ?? []
-    const kbChildren = kb?.root?.children ?? []
-    const mainTotal = main?.root?.fields?.totalCount ?? 0
-    const kbTotal = kb?.root?.fields?.totalCount ?? 0
-    return {
-      ...main,
-      root: {
-        ...main.root,
-        children: [...mainChildren, ...kbChildren],
-        fields: {
-          ...main.root.fields,
-          totalCount: mainTotal + kbTotal,
-        },
-      },
-    }
   }
 
   private filterAttachmentApp = (
@@ -2309,7 +2282,6 @@ export class VespaService {
     isCalendarConnected: boolean,
     isDriveConnected: boolean,
     timestampRange?: { to: number; from: number } | null,
-    includeKnowledgeBaseInSearch = false,
   ): Promise<AppEntityCounts> => {
     return await this._groupVespaSearch(
       query,
@@ -2320,7 +2292,6 @@ export class VespaService {
       isGmailConnected,
       isCalendarConnected,
       isDriveConnected,
-      includeKnowledgeBaseInSearch,
     )
   }
   async _groupVespaSearch(
@@ -2332,7 +2303,6 @@ export class VespaService {
     isGmailConnected?: boolean,
     isCalendarConnected?: boolean,
     isDriveConnected?: boolean,
-    includeKnowledgeBaseInSearch = false,
   ): Promise<AppEntityCounts> {
     let excludedApps: Apps[] = []
     if (!isDriveConnected) {
@@ -2364,27 +2334,7 @@ export class VespaService {
       "input.query(e)": "embed(@query)",
     }
     try {
-      const mainCounts = await this.vespa.groupSearch(hybridDefaultPayload)
-      if (!includeKnowledgeBaseInSearch) {
-        return mainCounts
-      }
-      const { yql: kbYql, profile: kbProfile } =
-        this.HybridDefaultProfileAppEntityCountsKnowledgeBaseOnly(
-          limit,
-          SearchModes.NativeRank,
-          email,
-        )
-      const kbPayload = {
-        yql: kbYql,
-        query,
-        email,
-        "ranking.profile": kbProfile,
-        "input.query(e)": "embed(@query)",
-      }
-      console.log("kbPayload", kbPayload)
-      const kbCounts = await this.vespa.groupSearch(kbPayload)
-      console.log("kbCounts", kbCounts)
-      return this.mergeAppEntityCounts(mainCounts, kbCounts)
+      return await this.vespa.groupSearch(hybridDefaultPayload)
     } catch (error) {
       this.logger.error("Error in group vespa search: ", error)
       throw new ErrorPerformingSearch({
@@ -2392,6 +2342,33 @@ export class VespaService {
         sources: this.getSchemaSourcesString(),
       })
     }
+  }
+
+  /**
+   * Group-by counts for knowledge base only. No merge with main group search.
+   * Used by SearchKnowledgeBaseApi and by callers that merge counts themselves.
+   */
+  groupVespaSearchKnowledgeBase = async (
+    query: string,
+    email: string,
+    limit = this.config.page,
+    timestampRange?: { to: number; from: number } | null,
+  ): Promise<AppEntityCounts> => {
+    const { yql, profile } =
+      this.HybridDefaultProfileAppEntityCountsKnowledgeBaseOnly(
+        limit,
+        SearchModes.NativeRank,
+        email,
+        timestampRange ?? null,
+      )
+    const payload = {
+      yql,
+      query,
+      email,
+      "ranking.profile": profile,
+      "input.query(e)": "embed(@query)",
+    }
+    return this.vespa.groupSearch(payload)
   }
 
   searchVespa = async (
@@ -2423,7 +2400,6 @@ export class VespaService {
       eventStatus = null,
       processedCollectionSelections = {},
       appFilters = {},
-      includeKnowledgeBaseInSearch = false,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> => {
     // Filter out attachment app and entities if present
@@ -2455,11 +2431,10 @@ export class VespaService {
       eventStatus,
       processedCollectionSelections,
       appFilters,
-      includeKnowledgeBaseInSearch,
     })
   }
 
-  async _searchVespa(
+  _searchVespa(
     query: string,
     email: string,
     app: Apps | Apps[] | null,
@@ -2488,7 +2463,6 @@ export class VespaService {
       eventStatus = null,
       processedCollectionSelections,
       appFilters = {},
-      includeKnowledgeBaseInSearch = false,
     }: Partial<VespaQueryConfig>,
   ): Promise<VespaSearchResponse> {
     // Determine the timestamp cutoff based on lastUpdated
@@ -2554,27 +2528,8 @@ export class VespaService {
 
     span?.setAttribute("vespaPayload", JSON.stringify(hybridDefaultPayload))
     try {
-      const result =
-        await this.vespa.search<VespaSearchResponse>(hybridDefaultPayload)
-      if (!includeKnowledgeBaseInSearch) {
-        return result
-      }
-      const { yql: kbYql, profile: kbProfile } =
-        this.HybridDefaultProfileKnowledgeBaseOnly(limit, rankProfile, email)
-      const kbPayload = {
-        yql: kbYql,
-        query,
-        email,
-        "ranking.profile": kbProfile,
-        "input.query(e)": "embed(@query)",
-        "input.query(alpha)": alpha,
-        maxHits,
-        hits: limit,
-        timeout: "30s",
-        ...(offset ? { offset } : {}),
-      }
-      const kbResult = await this.vespa.search<VespaSearchResponse>(kbPayload)
-      return this.mergeVespaSearchResponses(result, kbResult)
+      let result = this.vespa.search<VespaSearchResponse>(hybridDefaultPayload)
+      return result
     } catch (error) {
       this.logger.error(`Search failed with error:`, error)
       throw new ErrorPerformingSearch({
@@ -2582,6 +2537,46 @@ export class VespaService {
         sources: this.getSchemaSourcesString(),
       })
     }
+  }
+
+  /**
+   * Search only within the knowledge base (KbItemsSchema). No merge with main search.
+   * Callers can call this together with searchVespa and merge results themselves.
+   */
+  searchVespaKnowledgeBase = async (
+    query: string,
+    email: string,
+    {
+      alpha = 0.5,
+      limit = this.config.page,
+      offset = 0,
+      rankProfile = SearchModes.NativeRank,
+      maxHits = 400,
+    }: Partial<
+      Pick<
+        VespaQueryConfig,
+        "limit" | "offset" | "alpha" | "rankProfile" | "maxHits"
+      >
+    > = {},
+  ): Promise<VespaSearchResponse> => {
+    const { yql, profile } = this.HybridDefaultProfileKnowledgeBaseOnly(
+      limit,
+      rankProfile,
+      email,
+    )
+    const payload = {
+      yql,
+      query,
+      email,
+      "ranking.profile": profile,
+      "input.query(e)": "embed(@query)",
+      "input.query(alpha)": alpha,
+      maxHits,
+      hits: limit,
+      timeout: "30s",
+      ...(offset ? { offset } : {}),
+    }
+    return this.vespa.search<VespaSearchResponse>(payload)
   }
 
   searchVespaInFiles = async (

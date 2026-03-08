@@ -1950,8 +1950,6 @@ export type VespaQueryConfig = {
   owner?: string | string[] | null
   attendees?: string[] | null
   eventStatus?: EventStatusType | null
-  /** When true, group/search also runs a separate search on knowledge base (dataSourceFile) and merges results */
-  includeKnowledgeBaseInSearch?: boolean
 }
 
 export interface GetItemsParams {
