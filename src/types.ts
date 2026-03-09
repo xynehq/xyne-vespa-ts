@@ -1293,6 +1293,16 @@ const VespaAutocompleteZohoTicketSchema = z
   })
   .merge(defaultVespaFieldsSchema)
 
+const VespaAutocompleteKbFileSchema = z
+  .object({
+    docId: z.string(),
+    fileName: z.string(),
+    app: z.nativeEnum(Apps).optional(),
+    entity: KnowledgeBaseEntitySchema.optional(),
+    sddocname: z.literal(KbItemsSchema),
+  })
+  .merge(defaultVespaFieldsSchema)
+
 const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteFileSchema,
   VespaAutocompleteUserSchema,
@@ -1302,6 +1312,7 @@ const VespaAutocompleteSummarySchema = z.union([
   VespaAutocompleteChatContainerSchema,
   VespaAutocompleteChatUserSchema,
   VespaAutocompleteZohoTicketSchema,
+  VespaAutocompleteKbFileSchema,
 ])
 
 const VespaAutocompleteFieldsSchema = z
@@ -1581,6 +1592,17 @@ export const AutocompleteZohoTicketSchema = z
   })
   .strip()
 
+export const AutocompleteKbFileSchema = z
+  .object({
+    type: z.literal(KbItemsSchema),
+    relevance: z.number(),
+    title: z.string(),
+    app: z.literal(Apps.KnowledgeBase),
+    entity: KnowledgeBaseEntitySchema,
+    docId: z.string(),
+  })
+  .strip()
+
 const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteFileSchema,
   AutocompleteUserSchema,
@@ -1590,6 +1612,7 @@ const AutocompleteSchema = z.discriminatedUnion("type", [
   AutocompleteMailAttachmentSchema,
   AutocompleteChatUserSchema,
   AutocompleteZohoTicketSchema,
+  AutocompleteKbFileSchema,
 ])
 
 export const AutocompleteResultsSchema = z.object({

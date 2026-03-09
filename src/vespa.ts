@@ -264,6 +264,27 @@ export class VespaService {
     return resp
   }
 
+  /** Merges two VespaAutocompleteResponse, sorts by relevance (highest first), and returns at most limit children. */
+  private mergeAutocompleteResponses(
+    main: VespaAutocompleteResponse,
+    kb: VespaAutocompleteResponse,
+    limit: number,
+  ): VespaAutocompleteResponse {
+    const mainChildren = main?.root?.children ?? []
+    const kbChildren = kb?.root?.children ?? []
+    const combined = [...mainChildren, ...kbChildren].sort(
+      (a, b) => (b.relevance ?? 0) - (a.relevance ?? 0),
+    )
+    const children = combined.slice(0, limit)
+    return {
+      ...main,
+      root: {
+        ...main.root,
+        children,
+      },
+    }
+  }
+
   autocomplete = async (
     query: string,
     email: string,
@@ -309,7 +330,34 @@ export class VespaService {
       timeout: "5s",
     }
 
-    return this.vespa.autoComplete(searchPayload).catch((error) => {
+    try {
+      const mainResponse = await this.vespa.autoComplete(searchPayload)
+      const kbYql = YqlBuilder.create({
+        userId: email,
+        requirePermissions: false,
+        sources: [KbItemsSchema],
+        targetHits: limit,
+      })
+        .from([KbItemsSchema])
+        .where(
+          And.withoutPermissions([
+            fuzzy("fileName_fuzzy", "@query"),
+            contains("createdBy", email.trim()),
+          ]),
+        )
+        .build()
+      const kbPayload = {
+        yql: kbYql,
+        query,
+        email,
+        hits: limit,
+        "ranking.profile": "autocomplete",
+        "presentation.summary": "autocomplete",
+        timeout: "5s",
+      }
+      const kbResponse = await this.vespa.autoComplete(kbPayload)
+      return this.mergeAutocompleteResponses(mainResponse, kbResponse, limit)
+    } catch (error) {
       this.logger.error(`Autocomplete failed with error:`, error)
       throw new ErrorPerformingSearch({
         message: `Error performing autocomplete search`,
@@ -317,7 +365,7 @@ export class VespaService {
         sources: "file",
       })
       // TODO: instead of null just send empty response
-    })
+    }
   }
 
   handleAppsNotInYql = (app: Apps | null, includedApp: Apps[]) => {
@@ -1885,6 +1933,71 @@ export class VespaService {
       .buildProfile(SearchModes.NativeRank)
   }
 
+  /**
+   * Group-by profile for knowledge base only. Used when
+   * Applies the same active-scope filters (e.g. timestampRange) as the main search so counts reflect the merged view.
+   */
+  HybridDefaultProfileAppEntityCountsKnowledgeBaseOnly = (
+    hits: number,
+    searchMode: SearchModes,
+    email: string,
+    timestampRange?: { to: number | null; from: number | null } | null,
+  ): YqlProfile => {
+    const conditions: YqlCondition[] = [contains("createdBy", email.trim())]
+    if (
+      timestampRange &&
+      (timestampRange.from != null || timestampRange.to != null)
+    ) {
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    }
+    return YqlBuilder.create({
+      userId: email,
+      requirePermissions: false,
+      sources: [KbItemsSchema],
+      targetHits: hits,
+    })
+      .from([KbItemsSchema])
+      .where(and(conditions))
+      .limit(0)
+      .groupBy(`
+        all(
+              group(app) each(
+                  group(entity) each(output(count()))
+              )
+            )
+        `)
+      .buildProfile(searchMode)
+  }
+
+  /**
+   * Hybrid search profile for knowledge base only.
+   */
+  HybridDefaultProfileKnowledgeBaseOnly = (
+    limit: number,
+    rankProfile: SearchModes,
+    email: string,
+  ): YqlProfile => {
+    const relevanceCondition = Or.withoutPermissions([
+      userInput("@query", limit),
+      nearestNeighbor("chunk_embeddings", "e", limit),
+    ])
+    const yql = YqlBuilder.create({
+      userId: email,
+      requirePermissions: false,
+      sources: [KbItemsSchema],
+      targetHits: limit,
+    })
+      .from([KbItemsSchema])
+      .where(
+        and([
+          And.withoutPermissions([relevanceCondition]),
+          contains("createdBy", email.trim()),
+        ]),
+      )
+      .buildProfile(rankProfile)
+    return yql
+  }
+
   private filterAttachmentApp = (
     app: Apps | Apps[] | null | undefined,
   ): Apps | Apps[] | null => {
@@ -2231,6 +2344,33 @@ export class VespaService {
     }
   }
 
+  /**
+   * Group-by counts for knowledge base only. No merge with main group search.
+   * Used by SearchKnowledgeBaseApi and by callers that merge counts themselves.
+   */
+  groupVespaSearchKnowledgeBase = async (
+    query: string,
+    email: string,
+    limit = this.config.page,
+    timestampRange?: { to: number; from: number } | null,
+  ): Promise<AppEntityCounts> => {
+    const { yql, profile } =
+      this.HybridDefaultProfileAppEntityCountsKnowledgeBaseOnly(
+        limit,
+        SearchModes.NativeRank,
+        email,
+        timestampRange ?? null,
+      )
+    const payload = {
+      yql,
+      query,
+      email,
+      "ranking.profile": profile,
+      "input.query(e)": "embed(@query)",
+    }
+    return this.vespa.groupSearch(payload)
+  }
+
   searchVespa = async (
     query: string,
     email: string,
@@ -2397,6 +2537,46 @@ export class VespaService {
         sources: this.getSchemaSourcesString(),
       })
     }
+  }
+
+  /**
+   * Search only within the knowledge base (KbItemsSchema). No merge with main search.
+   * Callers can call this together with searchVespa and merge results themselves.
+   */
+  searchVespaKnowledgeBase = async (
+    query: string,
+    email: string,
+    {
+      alpha = 0.5,
+      limit = this.config.page,
+      offset = 0,
+      rankProfile = SearchModes.NativeRank,
+      maxHits = 400,
+    }: Partial<
+      Pick<
+        VespaQueryConfig,
+        "limit" | "offset" | "alpha" | "rankProfile" | "maxHits"
+      >
+    > = {},
+  ): Promise<VespaSearchResponse> => {
+    const { yql, profile } = this.HybridDefaultProfileKnowledgeBaseOnly(
+      limit,
+      rankProfile,
+      email,
+    )
+    const payload = {
+      yql,
+      query,
+      email,
+      "ranking.profile": profile,
+      "input.query(e)": "embed(@query)",
+      "input.query(alpha)": alpha,
+      maxHits,
+      hits: limit,
+      timeout: "30s",
+      ...(offset ? { offset } : {}),
+    }
+    return this.vespa.search<VespaSearchResponse>(payload)
   }
 
   searchVespaInFiles = async (

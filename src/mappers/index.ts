@@ -64,6 +64,12 @@ import {
   ZohoEntity,
   AutocompleteZohoTicketSchema,
   type VespaAutocompleteZohoTicket,
+  KbItemsSchema,
+  KbFileResponseSchema,
+  type VespaKbFileSearch,
+  AutocompleteKbFileSchema,
+  KnowledgeBaseEntity,
+  KnowledgeBaseEntitySchema,
 } from "../types"
 
 import type { z } from "zod"
@@ -360,6 +366,36 @@ export const VespaSearchResponseToSearchResult = (
             }
             return DataSourceFileResponseSchema.parse(mappedResult)
           } else if (
+            (child.fields as VespaKbFileSearch).sddocname === KbItemsSchema
+          ) {
+            const kbFields = child.fields as VespaKbFileSearch & {
+              type?: string
+              chunks_summary?: string[]
+            }
+            const processedChunks = getSortedScoredChunks(
+              kbFields.matchfeatures,
+              kbFields.chunks_summary as string[],
+              maxSearchChunks,
+            )
+            const mappedKbResult = {
+              docId: kbFields.docId,
+              fileName: kbFields.fileName,
+              app: Apps.KnowledgeBase,
+              entity: kbFields.entity,
+              createdBy: kbFields.createdBy,
+              updatedAt: kbFields.updatedAt,
+              itemId: kbFields.itemId,
+              clId: kbFields.clId,
+              mimeType: kbFields.mimeType,
+              pageTitlte: kbFields.pageTitlte,
+              type: KbItemsSchema,
+              relevance: child.relevance,
+              chunks_summary: processedChunks,
+              matchfeatures: kbFields.matchfeatures,
+              rankfeatures: kbFields.rankfeatures,
+            }
+            return KbFileResponseSchema.parse(mappedKbResult)
+          } else if (
             (child.fields as VespaZohoTicketSearch).sddocname === ticketSchema
           ) {
             const fields = child.fields as VespaZohoTicketSearch & {
@@ -460,6 +496,32 @@ export const VespaAutocompleteResponseToResult = (
           ;(child.fields as any).type = ticketSchema
           ;(child.fields as any).relevance = child.relevance
           return AutocompleteZohoTicketSchema.parse(child.fields)
+        } else if (
+          (child.fields as { sddocname?: string }).sddocname === KbItemsSchema
+        ) {
+          const fields = child.fields as {
+            docId: string
+            fileName: string
+            app?: Apps
+            entity?: string
+          }
+          const rawEntity = fields.entity
+          const entityResult =
+            rawEntity !== undefined && rawEntity !== null
+              ? KnowledgeBaseEntitySchema.safeParse(rawEntity)
+              : null
+          const entity =
+            entityResult?.success === true
+              ? entityResult.data
+              : KnowledgeBaseEntity.File
+          return AutocompleteKbFileSchema.parse({
+            type: KbItemsSchema,
+            relevance: child.relevance,
+            title: fields.fileName ?? "",
+            app: Apps.KnowledgeBase,
+            entity,
+            docId: fields.docId,
+          })
         } else {
           throw new Error(
             `Unknown schema type: ${(child.fields as any)?.sddocname}`,
