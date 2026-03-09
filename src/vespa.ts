@@ -1971,16 +1971,28 @@ export class VespaService {
 
   /**
    * Hybrid search profile for knowledge base only.
+   * Optional timestampRange applies the same time filter as groupVespaSearchKnowledgeBase.
    */
   HybridDefaultProfileKnowledgeBaseOnly = (
     limit: number,
     rankProfile: SearchModes,
     email: string,
+    timestampRange?: { to: number | null; from: number | null } | null,
   ): YqlProfile => {
     const relevanceCondition = Or.withoutPermissions([
       userInput("@query", limit),
       nearestNeighbor("chunk_embeddings", "e", limit),
     ])
+    const conditions: YqlCondition[] = [
+      And.withoutPermissions([relevanceCondition]),
+      contains("createdBy", email.trim()),
+    ]
+    if (
+      timestampRange &&
+      (timestampRange.from != null || timestampRange.to != null)
+    ) {
+      conditions.push(timestamp("updatedAt", "updatedAt", timestampRange))
+    }
     const yql = YqlBuilder.create({
       userId: email,
       requirePermissions: false,
@@ -1988,12 +2000,7 @@ export class VespaService {
       targetHits: limit,
     })
       .from([KbItemsSchema])
-      .where(
-        and([
-          And.withoutPermissions([relevanceCondition]),
-          contains("createdBy", email.trim()),
-        ]),
-      )
+      .where(and(conditions))
       .buildProfile(rankProfile)
     return yql
   }
@@ -2552,10 +2559,16 @@ export class VespaService {
       offset = 0,
       rankProfile = SearchModes.NativeRank,
       maxHits = 400,
+      timestampRange,
     }: Partial<
       Pick<
         VespaQueryConfig,
-        "limit" | "offset" | "alpha" | "rankProfile" | "maxHits"
+        | "limit"
+        | "offset"
+        | "alpha"
+        | "rankProfile"
+        | "maxHits"
+        | "timestampRange"
       >
     > = {},
   ): Promise<VespaSearchResponse> => {
@@ -2563,6 +2576,7 @@ export class VespaService {
       limit,
       rankProfile,
       email,
+      timestampRange ?? null,
     )
     const payload = {
       yql,
