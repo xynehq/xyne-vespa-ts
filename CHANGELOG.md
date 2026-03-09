@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.7.1...v1.7.2) (2026-03-09)
+
+
+### Bug Fixes
+
+* added missing kb timestamp ([#65](https://github.com/xynehq/xyne-vespa-ts/issues/65)) ([110f1d0](https://github.com/xynehq/xyne-vespa-ts/commit/110f1d09fec5b5f1bc61939a3588d11677704c47))
+
 ## [1.7.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.7.0...v1.7.1) (2026-03-09)
 
 # [1.7.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.6.0...v1.7.0) (2026-03-09)
