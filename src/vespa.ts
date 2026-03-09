@@ -1221,18 +1221,6 @@ export class VespaService {
     const conds: YqlCondition[] = []
     const { collectionIds, collectionFolderIds, collectionFileIds } = selections
 
-    this.logger.info(
-      `[KnowledgeBase] Translating processed collection selections into YQL field filters ${JSON.stringify(
-        {
-          fieldFilters: {
-            clId: collectionIds ?? [],
-            clFd: collectionFolderIds ?? [],
-            docId: collectionFileIds ?? [],
-          },
-        },
-      )}`,
-    )
-
     if (collectionIds?.length) {
       conds.push(
         Or.withoutPermissions(
