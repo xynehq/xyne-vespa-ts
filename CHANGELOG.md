@@ -1,3 +1,5 @@
+## [1.7.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.7.0...v1.7.1) (2026-03-09)
+
 # [1.7.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.6.0...v1.7.0) (2026-03-09)
 
 
