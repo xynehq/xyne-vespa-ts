@@ -1221,6 +1221,18 @@ export class VespaService {
     const conds: YqlCondition[] = []
     const { collectionIds, collectionFolderIds, collectionFileIds } = selections
 
+    this.logger.info(
+      `[KnowledgeBase] Translating processed collection selections into YQL field filters ${JSON.stringify(
+        {
+          fieldFilters: {
+            clId: collectionIds ?? [],
+            clFd: collectionFolderIds ?? [],
+            docId: collectionFileIds ?? [],
+          },
+        },
+      )}`,
+    )
+
     if (collectionIds?.length) {
       conds.push(
         Or.withoutPermissions(
@@ -3683,6 +3695,7 @@ export class VespaService {
       mentions,
       channelIds,
       userIds,
+      excludeDocIds,
       limit,
       offset,
     } = params
@@ -3751,6 +3764,10 @@ export class VespaService {
     })
       .from(chatMessageSchema)
       .where(and(conditions))
+
+    if (excludeDocIds && excludeDocIds.length > 0) {
+      yqlBuilder.excludeDocIds(excludeDocIds)
+    }
 
     // TODO: Improve ordering for query-based searches
     // currently getting error as
@@ -3822,6 +3839,7 @@ export class VespaService {
       asc,
       channelName = null,
       filterQuery = null,
+      excludeDocIds = [],
       mentions,
     } = params
 
@@ -3906,6 +3924,7 @@ export class VespaService {
       channelIds,
       userIds,
       agentChannelIds: agentSelectedChannelIds,
+      excludeDocIds,
       offset,
     })
 
