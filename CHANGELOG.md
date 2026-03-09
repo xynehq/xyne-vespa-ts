@@ -1,3 +1,18 @@
+# [1.7.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.6.0...v1.7.0) (2026-03-09)
+
+
+### Bug Fixes
+
+* release YML disable npm provenance ([#62](https://github.com/xynehq/xyne-vespa-ts/issues/62)) ([ace1a06](https://github.com/xynehq/xyne-vespa-ts/commit/ace1a0614608f55eb871de866bb648afed851274))
+* retry npm publish ([#61](https://github.com/xynehq/xyne-vespa-ts/issues/61)) ([02f8e2c](https://github.com/xynehq/xyne-vespa-ts/commit/02f8e2c9aebaac34fe8997f3e85ec270088d5102))
+
+
+### Features
+
+* added database app ([#60](https://github.com/xynehq/xyne-vespa-ts/issues/60)) ([50d1a0b](https://github.com/xynehq/xyne-vespa-ts/commit/50d1a0b6789c737dd7686a60087f3834bfcfaa20))
+* added knowledge base search and autocomplete ([#63](https://github.com/xynehq/xyne-vespa-ts/issues/63)) ([748b8b9](https://github.com/xynehq/xyne-vespa-ts/commit/748b8b9f4da9b9d30a1efbf846e9906572c2110f))
+* **yql:** implement global and clause-level permission handling in YqlBuilder ([#59](https://github.com/xynehq/xyne-vespa-ts/issues/59)) ([f3e336a](https://github.com/xynehq/xyne-vespa-ts/commit/f3e336a59b567fcdc5015d2e942e3a05a1863268))
+
 # [1.7.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.6.0...v1.7.0) (2026-03-02)
 
 
