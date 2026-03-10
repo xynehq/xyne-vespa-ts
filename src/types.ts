@@ -24,6 +24,11 @@ export const datasourceSchema = "datasource"
 export const dataSourceFileSchema = "datasource_file"
 export const KbItemsSchema = "kb_items"
 
+// conversation memory (agentic RAG)
+export const chatMemorySchema = "chat_memory"
+// episodic memory
+export const episodicMemorySchema = "episodic_memory"
+
 // zoho
 export const ticketSchema = "ticket"
 
@@ -43,6 +48,8 @@ export type VespaSchema =
   | typeof dataSourceFileSchema
   | typeof KbItemsSchema
   | typeof ticketSchema
+  | typeof chatMemorySchema
+  | typeof episodicMemorySchema
 
 // not using @ because of vite of frontend
 export enum Apps {
@@ -65,6 +72,8 @@ export enum Apps {
   Database = "database",
   KnowledgeBase = "KnowledgeBase",
   WebSearch = "web-search",
+
+  ChatMemory = "chat-memory",
 
   // Microsoft apps (mirroring Google structure)
   MicrosoftDrive = "microsoft-drive",
@@ -130,6 +139,8 @@ const Schemas = z.union([
   z.literal(KbItemsSchema),
   z.literal(dataSourceFileSchema),
   z.literal(ticketSchema),
+  z.literal(chatMemorySchema),
+  z.literal(episodicMemorySchema),
 ])
 
 export enum MailEntity {
@@ -201,6 +212,15 @@ export enum SystemEntity {
   SystemInfo = "system_info",
   UserProfile = "user_profile",
 }
+
+export enum ChatMemoryEntity {
+  ConversationTurn = "conversation_turn",
+}
+
+export enum EpisodicMemoryEntity {
+  Memory = "episodic_memory",
+}
+
 export enum DataSourceEntity {
   DataSourceFile = "data_source_file",
 }
@@ -229,8 +249,12 @@ export type MicrosoftPeopleEntityType = z.infer<
   typeof MicrosoftPeopleEntitySchema
 >
 
+export const ChatMemoryEntitySchema = z.nativeEnum(ChatMemoryEntity)
+export const EpisodicMemoryEntitySchema = z.nativeEnum(EpisodicMemoryEntity)
 export const entitySchema = z.union([
   SystemEntitySchema,
+  ChatMemoryEntitySchema,
+  EpisodicMemoryEntitySchema,
   PeopleEntitySchema,
   FileEntitySchema,
   NotionEntitySchema,
@@ -248,6 +272,8 @@ export const entitySchema = z.union([
 
 export type Entity =
   | SystemEntity
+  | ChatMemoryEntity
+  | EpisodicMemoryEntity
   | PeopleEntity
   | DriveEntity
   | NotionEntity
@@ -1010,6 +1036,79 @@ export const VespaZohoTicketGetSchema = VespaZohoTicketSchema.merge(
 export type VespaZohoTicket = z.infer<typeof VespaZohoTicketSchema>
 export type VespaZohoTicketGet = z.infer<typeof VespaZohoTicketGetSchema>
 
+// Chat memory (conversation turns for agentic RAG retrieval)
+export const VespaChatMemorySchema = z.object({
+  docId: z.string(),
+  chatId: z.string(),
+  workspaceId: z.string(),
+  email: z.string(),
+  turnNumber: z.number(),
+  userMessage: z.string(),
+  assistantMessage: z.string(),
+  thinking: z.string().optional(),
+  text: z.string(),
+  topics: z.array(z.string()).optional(),
+  toolsUsed: z.array(z.string()).optional(),
+  permissions: z.array(z.string()),
+  app: z.literal(Apps.ChatMemory),
+  entity: z.nativeEnum(ChatMemoryEntity),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+})
+
+export type VespaChatMemory = z.infer<typeof VespaChatMemorySchema>
+
+const ChatMemoryMatchFeaturesSchema = z.object({
+  "bm25(text)": z.number().optional(),
+  vector_score: z.number().optional(),
+  relevance: z.number().optional(),
+})
+
+export const VespaChatMemorySearchSchema = VespaChatMemorySchema.extend({
+  sddocname: z.literal(chatMemorySchema),
+  matchfeatures: ChatMemoryMatchFeaturesSchema,
+  rankfeatures: z.any().optional(),
+}).merge(defaultVespaFieldsSchema)
+
+export type VespaChatMemorySearch = z.infer<typeof VespaChatMemorySearchSchema>
+
+// Episodic memory (distilled experiences, decisions, preferences)
+export const VespaEpisodicMemorySchema = z.object({
+  docId: z.string(),
+  workspaceId: z.string(),
+  email: z.string(),
+  memoryText: z.string(),
+  memoryType: z.string(),
+  sourceChatId: z.string(),
+  permissions: z.array(z.string()),
+  app: z.literal(Apps.ChatMemory),
+  entity: z.literal(EpisodicMemoryEntity.Memory),
+  importanceScore: z.number(),
+  lastUsedAt: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+})
+
+export type VespaEpisodicMemory = z.infer<typeof VespaEpisodicMemorySchema>
+
+const EpisodicMemoryMatchFeaturesSchema = z.object({
+  "bm25(memoryText)": z.number().optional(),
+  vector_score: z.number().optional(),
+  relevance: z.number().optional(),
+})
+
+export const VespaEpisodicMemorySearchSchema = VespaEpisodicMemorySchema.extend(
+  {
+    sddocname: z.literal(episodicMemorySchema),
+    matchfeatures: EpisodicMemoryMatchFeaturesSchema,
+    rankfeatures: z.any().optional(),
+  },
+).merge(defaultVespaFieldsSchema)
+
+export type VespaEpisodicMemorySearch = z.infer<
+  typeof VespaEpisodicMemorySearchSchema
+>
+
 export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaUserSchema,
   VespaFileSearchSchema,
@@ -1025,6 +1124,8 @@ export const VespaSearchFieldsUnionSchema = z.discriminatedUnion("sddocname", [
   VespaDataSourceFileSearchSchema,
   VespaKbFileSearchSchema,
   VespaZohoTicketSearchSchema,
+  VespaChatMemorySearchSchema,
+  VespaEpisodicMemorySearchSchema,
 ])
 
 // Get schema for DataSourceFile
@@ -1046,6 +1147,8 @@ const SearchMatchFeaturesSchema = z.union([
   ChatContainerMatchFeaturesSchema,
   KbFileMatchFeaturesSchema,
   ZohoTicketMatchFeaturesSchema,
+  ChatMemoryMatchFeaturesSchema,
+  EpisodicMemoryMatchFeaturesSchema,
 ])
 
 const VespaSearchFieldsSchema = z
@@ -1183,6 +1286,8 @@ export type Inserts =
   | VespaDataSourceFile
   | VespaKbFile
   | VespaZohoTicket
+  | VespaChatMemory
+  | VespaEpisodicMemory
 
 const AutocompleteMatchFeaturesSchema = z.union([
   z.object({

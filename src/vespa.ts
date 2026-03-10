@@ -47,6 +47,8 @@ import {
   eventSchema,
   fileSchema,
   GoogleApps,
+  chatMemorySchema,
+  episodicMemorySchema,
   KbItemsSchema,
   MailEntity,
   mailAttachmentSchema,
@@ -4393,6 +4395,129 @@ export class VespaService {
         message: `searchCollectionRAG failed for query: "${query}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
       })
       this.logger.error(searchError, "Error in searchCollectionRAG function")
+      throw searchError
+    }
+  }
+
+  /**
+   * Chat memory search: searches within a single chat only.
+   * If chatId is missing, returns empty results (no search).
+   */
+  searchChatMemory = async (
+    query: string,
+    email: string,
+    chatId: string | null | undefined,
+    workspaceId: string,
+    limit: number = 10,
+    offset: number = 0,
+    alpha: number = 0.5,
+    recencyDecayRate: number = 0.1,
+    rankProfile: SearchModes = SearchModes.NativeRank,
+  ): Promise<VespaSearchResponse> => {
+    if (!chatId || chatId.trim().length === 0) {
+      return vespaEmptyResponse()
+    }
+    const conditions: YqlCondition[] = [
+      contains("chatId", chatId.trim()),
+      contains("workspaceId", workspaceId),
+      or([
+        userInput("@query", limit),
+        nearestNeighbor("text_embeddings", "e", limit),
+      ]),
+    ]
+    const yql = YqlBuilder.create({ requirePermissions: true, userId: email })
+      .from(chatMemorySchema)
+      .where(and(conditions))
+      .build()
+    const searchPayload = {
+      yql,
+      query,
+      "ranking.profile": rankProfile,
+      "input.query(e)": "embed(@query)",
+      "input.query(alpha)": alpha,
+      "input.query(recency_decay_rate)": recencyDecayRate,
+      hits: limit,
+      offset,
+      timeout: "5s",
+    }
+    try {
+      const response =
+        await this.vespa.search<VespaSearchResponse>(searchPayload)
+      this.logger.info(
+        `[searchChatMemory] Found ${response.root?.children?.length || 0} hits for chatId: "${chatId}"`,
+      )
+      return response
+    } catch (error) {
+      const searchError = new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: chatMemorySchema,
+        message: `searchChatMemory failed for query: "${query}" chatId: "${chatId}"`,
+      })
+      this.logger.error(searchError, "Error in searchChatMemory")
+      throw searchError
+    }
+  }
+
+  /**
+   * Episodic memory search: optionally scoped by chatIds (sourceChatId).
+   * If chatIds is provided, search only within those chats; otherwise search globally (email + workspaceId only).
+   */
+  searchEpisodicMemory = async (
+    query: string,
+    email: string,
+    workspaceId: string,
+    chatIds: string[] | null | undefined,
+    limit: number = 10,
+    offset: number = 0,
+    alpha: number = 0.5,
+    recencyDecayRate: number = 0.1,
+    rankProfile: SearchModes = SearchModes.NativeRank,
+  ): Promise<VespaSearchResponse> => {
+    const conditions: YqlCondition[] = [
+      contains("workspaceId", workspaceId),
+      or([
+        userInput("@query", limit),
+        nearestNeighbor("memory_embeddings", "e", limit),
+      ]),
+    ]
+    if (chatIds && chatIds.length > 0) {
+      const trimmed = chatIds.map((id) => id.trim()).filter(Boolean)
+      if (trimmed.length > 0) {
+        const sourceChatConditions = trimmed.map((id) =>
+          contains("sourceChatId", id),
+        )
+        conditions.push(or(sourceChatConditions))
+      }
+    }
+    const yql = YqlBuilder.create({ requirePermissions: true, userId: email })
+      .from(episodicMemorySchema)
+      .where(and(conditions))
+      .build()
+    const searchPayload = {
+      yql,
+      query,
+      "ranking.profile": rankProfile,
+      "input.query(e)": "embed(@query)",
+      "input.query(alpha)": alpha,
+      "input.query(recency_decay_rate)": recencyDecayRate,
+      hits: limit,
+      offset,
+      timeout: "5s",
+    }
+    try {
+      const response =
+        await this.vespa.search<VespaSearchResponse>(searchPayload)
+      this.logger.info(
+        `[searchEpisodicMemory] Found ${response.root?.children?.length || 0} hits${chatIds?.length ? ` in ${chatIds.length} chat(s)` : " (global)"}`,
+      )
+      return response
+    } catch (error) {
+      const searchError = new ErrorPerformingSearch({
+        cause: error as Error,
+        sources: episodicMemorySchema,
+        message: `searchEpisodicMemory failed for query: "${query}"`,
+      })
+      this.logger.error(searchError, "Error in searchEpisodicMemory")
       throw searchError
     }
   }
