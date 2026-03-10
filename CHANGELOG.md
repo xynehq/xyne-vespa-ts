@@ -1,3 +1,11 @@
+# [1.8.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.7.2...v1.8.0) (2026-03-10)
+
+
+### Features
+
+* slack will have excludedIDs ([3d3d8ef](https://github.com/xynehq/xyne-vespa-ts/commit/3d3d8ef2c40ab445ac541713e81e0d723a91d7ed))
+* slack will have excludedIDs ([1d8c483](https://github.com/xynehq/xyne-vespa-ts/commit/1d8c483284e2fb66ab87e5e7d53062755678f047))
+
 ## [1.7.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.7.1...v1.7.2) (2026-03-09)
 
 
