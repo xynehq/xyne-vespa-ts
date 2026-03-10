@@ -3877,6 +3877,7 @@ export class VespaService {
       mentions,
       channelIds,
       userIds,
+      excludeDocIds,
       limit,
       offset,
     } = params
@@ -3945,6 +3946,10 @@ export class VespaService {
     })
       .from(chatMessageSchema)
       .where(and(conditions))
+
+    if (excludeDocIds && excludeDocIds.length > 0) {
+      yqlBuilder.excludeDocIds(excludeDocIds)
+    }
 
     // TODO: Improve ordering for query-based searches
     // currently getting error as
@@ -4016,6 +4021,7 @@ export class VespaService {
       asc,
       channelName = null,
       filterQuery = null,
+      excludeDocIds = [],
       mentions,
     } = params
 
@@ -4100,6 +4106,7 @@ export class VespaService {
       channelIds,
       userIds,
       agentChannelIds: agentSelectedChannelIds,
+      excludeDocIds,
       offset,
     })
 
