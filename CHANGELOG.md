@@ -1,3 +1,12 @@
+# [1.9.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.8.0...v1.9.0) (2026-03-11)
+
+
+### Features
+
+* added checksum for files ([9e6ef29](https://github.com/xynehq/xyne-vespa-ts/commit/9e6ef292a8ceb2cfe1bd1ef90ddf159ecb3fac14))
+* implement chat and episodic memory ([b088005](https://github.com/xynehq/xyne-vespa-ts/commit/b088005a98df1c53f606c8961a7223107ac35dc5))
+* resovled comments ([bf78475](https://github.com/xynehq/xyne-vespa-ts/commit/bf78475a66120d6f686031825a413f93476d9ca8))
+
 # [1.8.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.7.2...v1.8.0) (2026-03-10)
 
 
