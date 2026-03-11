@@ -340,6 +340,8 @@ export const VespaFileSchema = z.object({
   metadata: Metadata,
   createdAt: z.number(),
   updatedAt: z.number(),
+  /** SHA256 hex of file content; used for attachment dedup when same file is re-uploaded */
+  fileHash: z.string().optional(),
 })
 
 const chunkScoresSchema = z.object({
