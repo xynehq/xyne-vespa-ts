@@ -4473,6 +4473,9 @@ export class VespaService {
     recencyDecayRate: number = 0.1,
     rankProfile: SearchModes = SearchModes.NativeRank,
   ): Promise<VespaSearchResponse> => {
+    if (!workspaceId || workspaceId.trim().length === 0) {
+      return vespaEmptyResponse()
+    }
     const conditions: YqlCondition[] = [
       contains("workspaceId", workspaceId),
       or([
