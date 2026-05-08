@@ -58,6 +58,8 @@ type VespaConfigValues = {
 class VespaClient {
   private maxRetries: number
   private retryDelay: number
+  private maxRetryDelay: number
+  private retryJitter: number
   private feedEndpoint: string
   private queryEndpoint: string
   private logger: ILogger
@@ -67,14 +69,18 @@ class VespaClient {
     config?: {
       vespaMaxRetryAttempts?: number
       vespaRetryDelay?: number
+      vespaMaxRetryDelay?: number
+      vespaRetryJitter?: number
       vespaBaseHost?: string
       feedEndpoint?: string
       queryEndpoint?: string
     },
   ) {
     this.logger = logger || consoleLogger
-    this.maxRetries = config?.vespaMaxRetryAttempts || 3
-    this.retryDelay = config?.vespaRetryDelay || 1000 // milliseconds
+    this.maxRetries = config?.vespaMaxRetryAttempts ?? 8
+    this.retryDelay = config?.vespaRetryDelay ?? 1000 // milliseconds
+    this.maxRetryDelay = config?.vespaMaxRetryDelay ?? 30000
+    this.retryJitter = config?.vespaRetryJitter ?? 0.25
 
     const baseHost = config?.vespaBaseHost || "localhost"
 
@@ -84,6 +90,38 @@ class VespaClient {
   private async delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
+
+  private isRetryableStatus(status: number): boolean {
+    return status === 408 || status === 429 || status >= 500
+  }
+
+  private retryAfterMs(response: Response): number | undefined {
+    const retryAfter = response.headers.get("retry-after")
+    if (!retryAfter) return undefined
+
+    const seconds = Number(retryAfter)
+    if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
+
+    const retryAt = Date.parse(retryAfter)
+    if (Number.isFinite(retryAt)) return Math.max(0, retryAt - Date.now())
+
+    return undefined
+  }
+
+  private retryDelayMs(retryCount: number, response?: Response): number {
+    const serverDelay = response ? this.retryAfterMs(response) : undefined
+    if (serverDelay !== undefined)
+      return Math.min(serverDelay, this.maxRetryDelay)
+
+    const exponentialDelay = Math.min(
+      this.retryDelay * Math.pow(2, retryCount),
+      this.maxRetryDelay,
+    )
+    const jitter =
+      this.retryJitter > 0 ? 1 + Math.random() * this.retryJitter : 1
+    return Math.round(exponentialDelay * jitter)
+  }
+
   private async fetchWithRetry(
     url: string,
     options: RequestInit,
@@ -100,13 +138,15 @@ class VespaClient {
           )
         }
 
-        // Retry for 429 (Too Many Requests) or 5xx errors
         if (
-          (response.status === 429 || response.status >= 500) &&
+          this.isRetryableStatus(response.status) &&
           retryCount < this.maxRetries
         ) {
-          this.logger.info("retrying due to status: ", response.status)
-          await this.delay(this.retryDelay * Math.pow(2, retryCount))
+          const delayMs = this.retryDelayMs(retryCount, response)
+          this.logger.warn(
+            `Retrying Vespa request after ${response.status} in ${delayMs}ms (attempt ${retryCount + 1}/${this.maxRetries})`,
+          )
+          await this.delay(delayMs)
           return this.fetchWithRetry(url, options, retryCount + 1)
         }
       }
@@ -119,7 +159,11 @@ class VespaClient {
         retryCount < this.maxRetries &&
         !errorMessage.includes("Non-retryable error")
       ) {
-        await this.delay(this.retryDelay * Math.pow(2, retryCount)) // Exponential backoff
+        const delayMs = this.retryDelayMs(retryCount)
+        this.logger.warn(
+          `Retrying Vespa request after transport error in ${delayMs}ms (attempt ${retryCount + 1}/${this.maxRetries}): ${errorMessage}`,
+        )
+        await this.delay(delayMs)
         return this.fetchWithRetry(url, options, retryCount + 1)
       }
       throw error

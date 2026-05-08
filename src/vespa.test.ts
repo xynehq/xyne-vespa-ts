@@ -30,6 +30,8 @@ const mockLogger = {
 const mockConfig = {
   vespaMaxRetryAttempts: 3,
   vespaRetryDelay: 1000,
+  vespaMaxRetryDelay: 30000,
+  vespaRetryJitter: 0.25,
   vespaBaseHost: "0.0.0.0",
   page: 10,
   isDebugMode: false,

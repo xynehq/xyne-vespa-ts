@@ -1,6 +1,8 @@
 export default {
-  vespaMaxRetryAttempts: 3,
+  vespaMaxRetryAttempts: 8,
   vespaRetryDelay: 1000, // 1 sec
+  vespaMaxRetryDelay: 30000, // 30 sec
+  vespaRetryJitter: 0.25,
   vespaBaseHost: "0.0.0.0",
   page: 8,
   isDebugMode: false,
