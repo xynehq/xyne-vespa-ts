@@ -55,8 +55,10 @@ export function createDefaultConfig(
   overrides: Partial<VespaConfig> = {},
 ): VespaConfig {
   const defaultConfig = {
-    vespaMaxRetryAttempts: 3,
+    vespaMaxRetryAttempts: 8,
     vespaRetryDelay: 1000,
+    vespaMaxRetryDelay: 30000,
+    vespaRetryJitter: 0.25,
     vespaBaseHost: "localhost",
     page: 10,
     isDebugMode: false,
