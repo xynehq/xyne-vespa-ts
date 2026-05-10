@@ -1,3 +1,10 @@
+## [1.9.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.9.0...v1.9.1) (2026-05-10)
+
+
+### Bug Fixes
+
+* **feed:** Improve Vespa feed retry backoff ([#68](https://github.com/xynehq/xyne-vespa-ts/issues/68)) ([3ec5842](https://github.com/xynehq/xyne-vespa-ts/commit/3ec584287543c8ae9e4e26b2dc1abfb8c7aba1b5))
+
 # [1.9.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.8.0...v1.9.0) (2026-03-11)
 
 
