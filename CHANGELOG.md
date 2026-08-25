@@ -1,3 +1,10 @@
+## [1.9.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.9.1...v1.9.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **search:** add schema and collectionIds params to searchCollectionRAG ([#69](https://github.com/xynehq/xyne-vespa-ts/issues/69)) ([5657ca4](https://github.com/xynehq/xyne-vespa-ts/commit/5657ca422be692ffa9f099469f114d9f8913d233))
+
 ## [1.9.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.9.0...v1.9.1) (2026-05-10)
 
 
