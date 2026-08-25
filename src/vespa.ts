@@ -79,6 +79,7 @@ import {
   contains,
   fuzzy,
   greaterThanOrEqual,
+  inArray,
   lessThanOrEqual,
   matches,
   nearestNeighbor,
@@ -4331,6 +4332,16 @@ export class VespaService {
    * @param offset Offset for pagination (default: 0)
    * @param alpha Balance between text search and vector search (0.0 = only vector, 1.0 = only text, default: 0.5)
    * @param rankProfile Ranking profile to use (default: NativeRank)
+   * @param schema KB document schema to search (default: KbItemsSchema, for
+   *   deployments that haven't migrated KB items into the shared `file`
+   *   schema). Pass `fileSchema` for deployments where KB items live there
+   *   instead — defaulting to KbItemsSchema keeps every existing caller's
+   *   behavior unchanged.
+   * @param collectionIds Optional array of collection IDs to filter results
+   *   (whole-collection grant) — filters via a single cheap `clId in (...)`
+   *   clause rather than enumerating every file in the collection into
+   *   `docIds`, which is expensive for Vespa to evaluate on large
+   *   collections (the OR-chain size, not the hit count, is what's costly).
    * @returns Promise<VespaSearchResponse> containing the matching documents from collection source
    */
   searchCollectionRAG = async (
@@ -4341,6 +4352,8 @@ export class VespaService {
     offset: number = 0,
     alpha: number = 0.5,
     rankProfile: SearchModes = SearchModes.NativeRank,
+    schema: VespaSchema = KbItemsSchema,
+    collectionIds?: string[],
   ): Promise<VespaSearchResponse> => {
     // Construct RAG YQL query - hybrid search with both text and vector search
     // This combines BM25 text search with vector similarity search
@@ -4350,6 +4363,15 @@ export class VespaService {
         nearestNeighbor("chunk_embeddings", "e", limit),
       ]),
     ]
+
+    if (collectionIds && collectionIds.length > 0) {
+      conditions.push(
+        inArray(
+          "clId",
+          collectionIds.map((id) => id.trim()),
+        ),
+      )
+    }
 
     if (docIds && docIds.length > 0) {
       const docIdConditions = docIds.map((id) => contains("docId", id.trim()))
@@ -4365,7 +4387,7 @@ export class VespaService {
 
     // Don't require permission checks for KB items
     const yql = YqlBuilder.create({ requirePermissions: false })
-      .from(KbItemsSchema)
+      .from(schema)
       .where(and(conditions))
       .build()
 
@@ -4391,7 +4413,7 @@ export class VespaService {
     } catch (error) {
       const searchError = new ErrorPerformingSearch({
         cause: error as Error,
-        sources: KbItemsSchema,
+        sources: schema,
         message: `searchCollectionRAG failed for query: "${query}"${docIds ? ` with docIds: ${docIds.join(", ")}` : ""}`,
       })
       this.logger.error(searchError, "Error in searchCollectionRAG function")
