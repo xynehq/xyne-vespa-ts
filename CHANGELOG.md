@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.9.2...v1.10.0) (2026-09-16)
+
+
+### Features
+
+* **documents:** optional document summary for GetDocumentsByDocIds ([#70](https://github.com/xynehq/xyne-vespa-ts/issues/70)) ([748a57c](https://github.com/xynehq/xyne-vespa-ts/commit/748a57c4c6f9ad705cfce4faf51519e1ab2ae815))
+
 ## [1.9.2](https://github.com/xynehq/xyne-vespa-ts/compare/v1.9.1...v1.9.2) (2026-08-25)
 
 
