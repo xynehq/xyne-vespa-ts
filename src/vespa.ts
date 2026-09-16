@@ -2814,14 +2814,21 @@ export class VespaService {
     })
   }
 
+  /**
+   * @param summary Optional document summary (`presentation.summary`) to render
+   * hits with, e.g. one that returns array fields unpruned. Every schema a
+   * matched docId lives in must define it, or Vespa rejects the query.
+   */
   GetDocumentsByDocIds = async (
     docIds: string[],
     generateAnswerSpan: Span,
+    summary?: string,
   ): Promise<VespaSearchResponse> => {
     const opts = {
       namespace: this.config.namespace,
       docIds,
       generateAnswerSpan,
+      summary,
     }
     const yqlIds = docIds.map((id) => contains("docId", id))
     const yqlMailIds = docIds.map((id) => contains("mailId", id))

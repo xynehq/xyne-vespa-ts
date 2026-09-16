@@ -540,16 +540,21 @@ class VespaClient {
       docIds: string[]
       generateAnswerSpan: Span
       yql: string
+      /** Document summary to render hits with (`presentation.summary`); Vespa's default when omitted. */
+      summary?: string
     },
   ): Promise<VespaSearchResponse> {
-    const { docIds, generateAnswerSpan, yql } = options
+    const { docIds, generateAnswerSpan, yql, summary } = options
     const url = `${this.queryEndpoint}/search/`
 
     try {
+      // No `maxHits`: Vespa 8.7+ rejects it as a request parameter ("maxHits
+      // must be specified in a query profile", HTTP 500) and `hits` already
+      // caps the result set to the number of ids asked for.
       const payload = {
         yql: yql,
         hits: docIds?.length,
-        maxHits: docIds?.length,
+        ...(summary ? { "presentation.summary": summary } : {}),
       }
 
       generateAnswerSpan.setAttribute("vespaPayload", JSON.stringify(payload))
