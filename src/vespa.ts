@@ -4361,6 +4361,7 @@ export class VespaService {
     rankProfile: SearchModes = SearchModes.NativeRank,
     schema: VespaSchema = KbItemsSchema,
     collectionIds?: string[],
+    excludedIds?: string[],
   ): Promise<VespaSearchResponse> => {
     // Construct RAG YQL query - hybrid search with both text and vector search
     // This combines BM25 text search with vector similarity search
@@ -4393,10 +4394,15 @@ export class VespaService {
     }
 
     // Don't require permission checks for KB items
-    const yql = YqlBuilder.create({ requirePermissions: false })
+    const yqlBuilder = YqlBuilder.create({ requirePermissions: false })
       .from(schema)
       .where(and(conditions))
-      .build()
+    // Skips docs the caller already has, so a follow-up page returns new
+    // docs instead of the same ones (same as searchVespaAgent's excludedIds).
+    if (excludedIds && excludedIds.length > 0) {
+      yqlBuilder.excludeDocIds(excludedIds)
+    }
+    const yql = yqlBuilder.build()
 
     const searchPayload = {
       yql: yql,
