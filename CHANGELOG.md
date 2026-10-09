@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/xynehq/xyne-vespa-ts/compare/v1.10.0...v1.10.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **search:** support excludedIds in searchCollectionRAG ([#71](https://github.com/xynehq/xyne-vespa-ts/issues/71)) ([3116b7a](https://github.com/xynehq/xyne-vespa-ts/commit/3116b7aa72a58a09235a6c67a1e5d87d9b8ca7e1))
+
 # [1.10.0](https://github.com/xynehq/xyne-vespa-ts/compare/v1.9.2...v1.10.0) (2026-09-16)
 
 
